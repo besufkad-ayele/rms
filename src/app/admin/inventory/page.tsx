@@ -134,7 +134,7 @@ export default function InventoryManagementPage() {
       if (res.success) {
         setShowAddModal(false);
         setNewIngName("");
-        showToast(`Ingredient ${res.ingredient.name} created!`);
+        showToast(`Ingredient ${newIngName} created successfully!`);
         loadData();
       }
     });

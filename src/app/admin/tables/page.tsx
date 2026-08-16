@@ -113,7 +113,7 @@ export default function FloorTablesPage() {
 
       if (res.success) {
         setShowAddModal(false);
-        showToast(`Table ${res.table.unique_code} registered!`);
+        showToast(`Table T-${newTableNum.toString().padStart(2, "0")} registered!`);
         loadData();
       }
     });

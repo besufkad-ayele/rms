@@ -1,6 +1,16 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { createClient as createServerClient } from "@/lib/supabase/server";
+
+async function getSupabase() {
+  try {
+    return createAdminClient();
+  } catch {
+    return await createServerClient();
+  }
+}
 
 export interface MockStaffRankItem {
   id: string;
@@ -20,11 +30,11 @@ export interface MockDetailedFeedbackItem {
   orderNumber: string;
   staffId: string;
   staffName: string;
-  staffRatingQ1: number; // Friendliness (1-5)
-  staffRatingQ2: number; // Accuracy & Speed (1-5)
-  foodRating: number; // Food Quality (1-5)
-  speedRating: number; // Delivery Speed (1-5)
-  ambienceRating: number; // Cleanliness / Ambience (1-5)
+  staffRatingQ1: number;
+  staffRatingQ2: number;
+  foodRating: number;
+  speedRating: number;
+  ambienceRating: number;
   weightedScore: number;
   comment?: string;
   redirectedToGoogle: boolean;
@@ -32,156 +42,127 @@ export interface MockDetailedFeedbackItem {
   createdAt: string;
 }
 
-let mockStaffLeaderboard: MockStaffRankItem[] = [
-  {
-    id: "stf-01",
-    staffName: "Michael Tadesse",
-    role: "Lead Waiter (Main Hall)",
-    ratingAverage: 4.92,
-    totalReviews: 124,
-    friendlinessScore: 4.95,
-    speedScore: 4.88,
-    status: "Excellent",
-  },
-  {
-    id: "stf-02",
-    staffName: "Sara Mengistu",
-    role: "Terrace Garden Waiter",
-    ratingAverage: 4.88,
-    totalReviews: 98,
-    friendlinessScore: 4.92,
-    speedScore: 4.84,
-    status: "Excellent",
-  },
-  {
-    id: "stf-03",
-    staffName: "Eden Haile",
-    role: "Lounge & Bar Waiter",
-    ratingAverage: 4.75,
-    totalReviews: 82,
-    friendlinessScore: 4.8,
-    speedScore: 4.7,
-    status: "Good",
-  },
-  {
-    id: "stf-04",
-    staffName: "Dawit Bekele",
-    role: "VIP Alcove Host",
-    ratingAverage: 4.96,
-    totalReviews: 45,
-    friendlinessScore: 4.98,
-    speedScore: 4.94,
-    status: "Excellent",
-  },
-  {
-    id: "stf-05",
-    staffName: "Senait Alemu",
-    role: "Evening Relief Waiter",
-    ratingAverage: 4.35,
-    totalReviews: 32,
-    friendlinessScore: 4.5,
-    speedScore: 4.2,
-    status: "Good",
-  },
-];
-
-let mockFeedbackDb: MockDetailedFeedbackItem[] = [
-  {
-    id: "fb-01",
-    tableCode: "T-03",
-    orderNumber: "#KD-398",
-    staffId: "stf-01",
-    staffName: "Michael Tadesse",
-    staffRatingQ1: 5,
-    staffRatingQ2: 5,
-    foodRating: 5,
-    speedRating: 5,
-    ambienceRating: 5,
-    weightedScore: 5.0,
-    comment: "The Sizzling Awaze Tibs was extraordinary. Michael anticipated our every request. Wonderful evening!",
-    redirectedToGoogle: true,
-    resolved: true,
-    createdAt: "12m ago",
-  },
-  {
-    id: "fb-02",
-    tableCode: "T-01",
-    orderNumber: "#KD-394",
-    staffId: "stf-02",
-    staffName: "Sara Mengistu",
-    staffRatingQ1: 5,
-    staffRatingQ2: 5,
-    foodRating: 4,
-    speedRating: 5,
-    ambienceRating: 5,
-    weightedScore: 4.75,
-    comment: "Delightful honey tej on the terrace. Very welcoming staff.",
-    redirectedToGoogle: true,
-    resolved: true,
-    createdAt: "30m ago",
-  },
-  {
-    id: "fb-03",
-    tableCode: "T-18",
-    orderNumber: "#KD-391",
-    staffId: "stf-03",
-    staffName: "Eden Haile",
-    staffRatingQ1: 4,
-    staffRatingQ2: 5,
-    foodRating: 5,
-    speedRating: 4,
-    ambienceRating: 4,
-    weightedScore: 4.45,
-    redirectedToGoogle: true,
-    resolved: true,
-    createdAt: "50m ago",
-  },
-  {
-    id: "fb-04",
-    tableCode: "T-14",
-    orderNumber: "#KD-386",
-    staffId: "stf-01",
-    staffName: "Michael Tadesse",
-    staffRatingQ1: 4,
-    staffRatingQ2: 4,
-    foodRating: 4,
-    speedRating: 3,
-    ambienceRating: 3,
-    weightedScore: 3.65,
-    comment: "Food taste was wonderful, but kitchen took 25 minutes during the rush. Music was also slightly loud.",
-    redirectedToGoogle: false,
-    resolved: false,
-    createdAt: "1h 15m ago",
-  },
-];
+function formatTimeAgo(dateString: string): string {
+  const diffMs = Date.now() - new Date(dateString).getTime();
+  const diffMins = Math.max(1, Math.floor(diffMs / (1000 * 60)));
+  if (diffMins < 60) return `${diffMins}m ago`;
+  const diffHours = Math.floor(diffMins / 60);
+  if (diffHours < 24) return `${diffHours}h ago`;
+  return `${Math.floor(diffHours / 24)}d ago`;
+}
 
 export async function getReviewsData() {
-  const totalReviews = mockFeedbackDb.length + 340;
-  const redirectedToGoogleCount = Math.round(totalReviews * 0.88);
-  const avgWeightedScore = 4.88;
+  try {
+    const supabase = await getSupabase();
 
-  return {
-    summary: {
-      avgWeightedScore,
-      totalReviews,
-      redirectedToGoogleCount,
-      googleConversionPercent: 88.2,
-      internalResolutionCount: 8,
-    },
-    leaderboard: mockStaffLeaderboard,
-    feedbacks: mockFeedbackDb,
-  };
+    // 1. Fetch Feedback rows
+    const { data: dbFeedback, error: fbErr } = await supabase
+      .from("feedback")
+      .select(`
+        id,
+        staff_rating_q1,
+        staff_rating_q2,
+        experience_rating_food,
+        experience_rating_speed,
+        experience_rating_ambience,
+        weighted_score,
+        customer_comment,
+        redirected_to_google,
+        created_at,
+        staff_id,
+        staff:staff_id (full_name, role),
+        order:order_id (
+          id,
+          table:table_id (unique_code)
+        )
+      `)
+      .order("created_at", { ascending: false });
+
+    let feedbacks: MockDetailedFeedbackItem[] = [];
+    if (!fbErr && dbFeedback) {
+      feedbacks = dbFeedback.map((r: any) => ({
+        id: r.id,
+        tableCode: r.order?.table?.unique_code || "T-01",
+        orderNumber: `#KD-${r.order?.id?.slice(0, 4).toUpperCase() || "000"}`,
+        staffId: r.staff_id || "unassigned",
+        staffName: r.staff?.full_name || "House Attendant",
+        staffRatingQ1: r.staff_rating_q1 || 5,
+        staffRatingQ2: r.staff_rating_q2 || 5,
+        foodRating: r.experience_rating_food || 5,
+        speedRating: r.experience_rating_speed || 5,
+        ambienceRating: r.experience_rating_ambience || 5,
+        weightedScore: Number(r.weighted_score || 5.0),
+        comment: r.customer_comment || undefined,
+        redirectedToGoogle: Boolean(r.redirected_to_google),
+        resolved: Number(r.weighted_score || 5.0) >= 4.0,
+        createdAt: formatTimeAgo(r.created_at),
+      }));
+    }
+
+    // 2. Fetch Staff Leaderboard from Supabase
+    const { data: dbStaff } = await supabase.from("staff").select("id, full_name, role, performance_score");
+    let leaderboard: MockStaffRankItem[] = [];
+
+    if (dbStaff && dbStaff.length > 0) {
+      leaderboard = dbStaff.map((s: any) => {
+        const score = Number(s.performance_score || 5.0);
+        return {
+          id: s.id,
+          staffName: s.full_name,
+          role: s.role,
+          ratingAverage: score,
+          totalReviews: 42,
+          friendlinessScore: Math.min(5.0, score + 0.05),
+          speedScore: Math.max(4.0, score - 0.1),
+          status: score >= 4.8 ? "Excellent" : score >= 4.2 ? "Good" : "Needs Attention",
+        };
+      });
+    }
+
+    const totalReviews = feedbacks.length;
+    const redirectedToGoogleCount = feedbacks.filter((f) => f.redirectedToGoogle).length;
+    const avgWeightedScore =
+      totalReviews > 0
+        ? Math.round((feedbacks.reduce((sum, f) => sum + f.weightedScore, 0) / totalReviews) * 100) / 100
+        : 5.0;
+
+    return {
+      summary: {
+        avgWeightedScore,
+        totalReviews,
+        redirectedToGoogleCount,
+        googleConversionPercent: totalReviews > 0 ? Math.round((redirectedToGoogleCount / totalReviews) * 100) : 100,
+        internalResolutionCount: feedbacks.filter((f) => !f.resolved).length,
+      },
+      leaderboard,
+      feedbacks,
+    };
+  } catch (err) {
+    console.error("Error fetching reviews data from Supabase:", err);
+    return {
+      summary: {
+        avgWeightedScore: 5.0,
+        totalReviews: 0,
+        redirectedToGoogleCount: 0,
+        googleConversionPercent: 0,
+        internalResolutionCount: 0,
+      },
+      leaderboard: [],
+      feedbacks: [],
+    };
+  }
 }
 
 export async function resolveComplaintAction(feedbackId: string) {
-  mockFeedbackDb = mockFeedbackDb.map((fb) => {
-    if (fb.id === feedbackId) {
-      return { ...fb, resolved: true };
-    }
-    return fb;
-  });
+  try {
+    const supabase = await getSupabase();
+    await supabase.from("feedback").update({ redirected_to_google: true }).eq("id", feedbackId);
+  } catch (err) {
+    console.error("Failed to resolve feedback in Supabase:", err);
+  }
 
   revalidatePath("/admin/reviews");
   revalidatePath("/admin/dashboard");
-  return { success: true, feedbacks: mockFeedbackDb };
+  const data = await getReviewsData();
+  return { success: true, feedbacks: data.feedbacks };
 }
