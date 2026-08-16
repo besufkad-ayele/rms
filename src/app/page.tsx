@@ -1,1 +1,5 @@
-export { default, metadata } from "./(marketing)/page";
+import MarketingPage from "./(marketing)/page";
+
+export default function RootPage() {
+  return <MarketingPage />;
+}
