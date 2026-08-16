@@ -13,7 +13,7 @@ async function getSupabase() {
 }
 
 export interface MockAdminOrder {
-  id: string;
+  id: string
   orderNumber: string;
   tableCode: string;
   channel: "dine_in" | "takeout" | "delivery";
