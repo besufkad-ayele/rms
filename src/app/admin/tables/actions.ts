@@ -15,7 +15,7 @@ async function getSupabase() {
   }
 }
 
-function getSectionForTableNumber(tableNum: number): "Main Dining Hall" | "Open Terrace" | "Lounge & Bar" | "VIP Alcove" {
+function getSectionForTableNumber(tableNum: number): string {
   if (tableNum <= 4) return "Open Terrace";
   if (tableNum <= 10) return "Main Dining Hall";
   if (tableNum <= 13) return "Lounge & Bar";
@@ -58,7 +58,7 @@ export async function updateTableDetailsAction(
   tableId: string,
   data: {
     capacity: number;
-    section: TableFloorState["section"];
+    section: string;
     assignedStaffName: string;
     status: "free" | "occupied" | "reserved";
   }
@@ -91,7 +91,7 @@ export async function updateTableDetailsAction(
 export async function createNewTableAction(data: {
   tableNumber: number;
   capacity: number;
-  section: TableFloorState["section"];
+  section: string;
   assignedStaffName: string;
 }) {
   const code = `T-${data.tableNumber.toString().padStart(2, "0")}`;
@@ -117,6 +117,21 @@ export async function createNewTableAction(data: {
     console.error("Failed to create new table in Supabase:", err);
     const res = await getTablesData();
     return { success: false, error: err.message, tables: res.tables };
+  }
+
+  revalidatePath("/admin/tables");
+  revalidatePath("/admin/dashboard");
+  revalidatePath("/admin/qr-codes");
+  const result = await getTablesData();
+  return { success: true, tables: result.tables };
+}
+
+export async function deleteTableAction(tableId: string) {
+  try {
+    const supabase = await getSupabase();
+    await supabase.from("tables").delete().eq("id", tableId);
+  } catch (err) {
+    console.error("Failed to delete table in Supabase:", err);
   }
 
   revalidatePath("/admin/tables");
@@ -155,4 +170,62 @@ export async function getDiningSectionsAction(): Promise<DiningSection[]> {
     { id: "sec-3", restaurant_id: DEFAULT_RESTAURANT_ID, name: "Lounge & Bar", description: "Cocktails and craft beverages", display_order: 3 },
     { id: "sec-4", restaurant_id: DEFAULT_RESTAURANT_ID, name: "VIP Alcove", description: "Private booth seating", display_order: 4 },
   ];
+}
+
+export async function createDiningSectionAction(name: string, description?: string) {
+  try {
+    const supabase = await getSupabase();
+    const existing = await getDiningSectionsAction();
+    const displayOrder = existing.length + 1;
+
+    const { error } = await supabase.from("dining_sections").insert([
+      {
+        restaurant_id: DEFAULT_RESTAURANT_ID,
+        name,
+        description: description || null,
+        display_order: displayOrder,
+      },
+    ]);
+    if (error) {
+      return { success: false, message: error.message, sections: await getDiningSectionsAction() };
+    }
+  } catch (err: any) {
+    console.error("Failed to create dining section:", err);
+    return { success: false, message: err.message, sections: await getDiningSectionsAction() };
+  }
+
+  revalidatePath("/admin/tables");
+  return { success: true, message: `Section "${name}" created successfully!`, sections: await getDiningSectionsAction() };
+}
+
+export async function updateDiningSectionAction(id: string, name: string, description?: string) {
+  try {
+    const supabase = await getSupabase();
+    const { error } = await supabase.from("dining_sections").update({ name, description }).eq("id", id);
+    if (error) {
+      return { success: false, message: error.message, sections: await getDiningSectionsAction() };
+    }
+  } catch (err: any) {
+    console.error("Failed to update dining section:", err);
+    return { success: false, message: err.message, sections: await getDiningSectionsAction() };
+  }
+
+  revalidatePath("/admin/tables");
+  return { success: true, message: `Section "${name}" updated successfully!`, sections: await getDiningSectionsAction() };
+}
+
+export async function deleteDiningSectionAction(id: string) {
+  try {
+    const supabase = await getSupabase();
+    const { error } = await supabase.from("dining_sections").delete().eq("id", id);
+    if (error) {
+      return { success: false, message: error.message, sections: await getDiningSectionsAction() };
+    }
+  } catch (err: any) {
+    console.error("Failed to delete dining section:", err);
+    return { success: false, message: err.message, sections: await getDiningSectionsAction() };
+  }
+
+  revalidatePath("/admin/tables");
+  return { success: true, message: "Section deleted successfully!", sections: await getDiningSectionsAction() };
 }
