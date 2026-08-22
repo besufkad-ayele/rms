@@ -15,10 +15,10 @@ async function getSupabase() {
   }
 }
 
-function getSectionForTableNumber(tableNum: number): "Main Dining Hall" | "Terrace Garden" | "Lounge & Bar" | "VIP Alcove" {
-  if (tableNum <= 4) return "Terrace Garden";
-  if (tableNum <= 16) return "Main Dining Hall";
-  if (tableNum <= 19) return "Lounge & Bar";
+function getSectionForTableNumber(tableNum: number): "Main Dining Hall" | "Open Terrace" | "Lounge & Bar" | "VIP Alcove" {
+  if (tableNum <= 4) return "Open Terrace";
+  if (tableNum <= 10) return "Main Dining Hall";
+  if (tableNum <= 13) return "Lounge & Bar";
   return "VIP Alcove";
 }
 
@@ -27,41 +27,28 @@ export async function getTablesData() {
     const supabase = await getSupabase();
     const { data: dbTables, error } = await supabase
       .from("tables")
-      .select(`
-        id,
-        table_number,
-        unique_code,
-        capacity,
-        status,
-        assigned_staff_id,
-        current_order_id,
-        staff:assigned_staff_id (full_name, role),
-        order:current_order_id (id, total_amount, created_at)
-      `)
+      .select("id, table_number, unique_code, capacity, status, section_name, assigned_staff_id, current_order_id")
       .order("table_number", { ascending: true });
 
-    if (!error && dbTables && dbTables.length > 0) {
+    if (error) {
+      console.error("Error fetching tables from Supabase:", error);
+    }
+
+    if (dbTables && dbTables.length > 0) {
       const tables: TableFloorState[] = dbTables.map((t: any) => ({
         id: t.id,
         table_number: t.table_number,
         unique_code: t.unique_code,
         capacity: t.capacity || 4,
-        section: getSectionForTableNumber(t.table_number),
+        section: (t.section_name as any) || getSectionForTableNumber(t.table_number),
         status: t.status as "free" | "occupied" | "reserved",
         assigned_staff_id: t.assigned_staff_id || undefined,
-        assigned_staff_name: t.staff?.full_name || undefined,
-        assigned_staff_role: t.staff?.role || undefined,
         current_order_id: t.current_order_id || undefined,
-        current_order_total: t.order?.total_amount ? Number(t.order.total_amount) : undefined,
-        occupied_since_minutes: t.order?.created_at
-          ? Math.max(1, Math.floor((Date.now() - new Date(t.order.created_at).getTime()) / (1000 * 60)))
-          : undefined,
-        active_guest_count: t.status === "occupied" ? Math.min(t.capacity || 4, 4) : undefined,
       }));
       return { tables };
     }
   } catch (err) {
-    console.error("Error fetching tables from Supabase:", err);
+    console.error("Exception fetching tables from Supabase:", err);
   }
 
   return { tables: [] };
@@ -80,18 +67,23 @@ export async function updateTableDetailsAction(
     const supabase = await getSupabase();
     const updatePayload: any = {
       capacity: data.capacity,
+      section_name: data.section,
       status: data.status,
     };
     if (data.status === "free") {
       updatePayload.current_order_id = null;
     }
-    await supabase.from("tables").update(updatePayload).eq("id", tableId);
+    const { error } = await supabase.from("tables").update(updatePayload).eq("id", tableId);
+    if (error) {
+      console.error("Failed to update table in Supabase:", error);
+    }
   } catch (err) {
     console.error("Failed to update table details in Supabase:", err);
   }
 
   revalidatePath("/admin/tables");
   revalidatePath("/admin/dashboard");
+  revalidatePath("/admin/qr-codes");
   const result = await getTablesData();
   return { success: true, tables: result.tables };
 }
@@ -106,21 +98,61 @@ export async function createNewTableAction(data: {
 
   try {
     const supabase = await getSupabase();
-    await supabase.from("tables").insert([
+    const { error } = await supabase.from("tables").insert([
       {
         restaurant_id: DEFAULT_RESTAURANT_ID,
         table_number: data.tableNumber,
         capacity: data.capacity,
         unique_code: code,
+        section_name: data.section,
         status: "free",
       },
     ]);
-  } catch (err) {
+    if (error) {
+      console.error("Failed to create table in Supabase:", error);
+      const res = await getTablesData();
+      return { success: false, error: error.message, tables: res.tables };
+    }
+  } catch (err: any) {
     console.error("Failed to create new table in Supabase:", err);
+    const res = await getTablesData();
+    return { success: false, error: err.message, tables: res.tables };
   }
 
   revalidatePath("/admin/tables");
   revalidatePath("/admin/dashboard");
+  revalidatePath("/admin/qr-codes");
   const result = await getTablesData();
   return { success: true, tables: result.tables };
+}
+
+export interface DiningSection {
+  id: string;
+  restaurant_id: string;
+  name: string;
+  description?: string;
+  display_order: number;
+}
+
+export async function getDiningSectionsAction(): Promise<DiningSection[]> {
+  try {
+    const supabase = await getSupabase();
+    const { data, error } = await supabase
+      .from("dining_sections")
+      .select("*")
+      .order("display_order", { ascending: true });
+
+    if (!error && data && data.length > 0) {
+      return data as DiningSection[];
+    }
+  } catch (err) {
+    console.error("Error fetching dining sections:", err);
+  }
+
+  return [
+    { id: "sec-1", restaurant_id: DEFAULT_RESTAURANT_ID, name: "Main Dining Hall", description: "Ground floor main dining hall", display_order: 1 },
+    { id: "sec-2", restaurant_id: DEFAULT_RESTAURANT_ID, name: "Open Terrace", description: "Rooftop terrace view", display_order: 2 },
+    { id: "sec-3", restaurant_id: DEFAULT_RESTAURANT_ID, name: "Lounge & Bar", description: "Cocktails and craft beverages", display_order: 3 },
+    { id: "sec-4", restaurant_id: DEFAULT_RESTAURANT_ID, name: "VIP Alcove", description: "Private booth seating", display_order: 4 },
+  ];
 }
