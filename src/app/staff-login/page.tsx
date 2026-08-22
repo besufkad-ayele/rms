@@ -147,14 +147,9 @@ export default function StaffSharedTabletLoginPage() {
                 </span>
               </div>
               <p className="text-xs text-white/80 mt-0.5">
-                Select your profile below and enter your 6-digit PIN to accept orders, track hearth prep, and manage tips.
+                Select your profile below and enter your secret PIN to accept orders, track hearth prep, and manage tips.
               </p>
             </div>
-          </div>
-
-          <div className="flex items-center gap-2 bg-white/10 rounded-button px-3.5 py-2 border border-white/10 text-xs font-mono text-white/90 shrink-0">
-            <KeyRound className="h-4 w-4 text-brand-accent shrink-0" />
-            <span>Default Demo PIN: 123456</span>
           </div>
         </div>
 

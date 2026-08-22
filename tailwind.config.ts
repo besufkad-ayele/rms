@@ -49,9 +49,12 @@ const config: Config = {
         },
       },
       fontFamily: {
-        sans: ["var(--font-montserrat)", "Montserrat", "system-ui", "sans-serif"],
-        header: ["var(--font-lato)", "Lato", "system-ui", "sans-serif"],
-        display: ["var(--font-lato)", "Lato", "system-ui", "sans-serif"],
+        sans: ["Nyala", "Noto Sans Ethiopic", "system-ui", "sans-serif"],
+        header: ["Abenet", "Abyssinica SIL", "Noto Serif Ethiopic", "serif"],
+        display: ["Abenet", "Abyssinica SIL", "Noto Serif Ethiopic", "serif"],
+        abenet: ["Abenet", "Abyssinica SIL", "Noto Serif Ethiopic", "serif"],
+        nyala: ["Nyala", "Noto Sans Ethiopic", "system-ui", "sans-serif"],
+        zibriqriq: ["Zibriqriq_1", "Zibriqriq", "Abyssinica SIL", "cursive", "serif"],
       },
       borderRadius: {
         card: "14px",

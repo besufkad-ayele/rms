@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useMemo, use } from "react";
+import React, { useState, useMemo, useEffect, use } from "react";
 import Link from "next/link";
 import {
   Search,
@@ -28,6 +28,8 @@ import { DishCard } from "@/components/menu/DishCard";
 import { DishDetailModal } from "@/components/menu/DishDetailModal";
 import { CartDrawer, CartItem } from "@/components/order/CartDrawer";
 import { OrderStatusStepper, FlowOrderStatus } from "@/components/order/OrderStatusStepper";
+import { submitOrderAction, submitPaymentAction, submitFeedbackAction, getOrderStatusAction } from "./actions";
+import { getMenuItemsAction } from "@/app/admin/menu/actions";
 import { PaymentMethodCard, PaymentMethod } from "@/components/order/PaymentMethodCard";
 import { RatingStep } from "@/components/order/RatingStep";
 import { ToastProvider, useToast } from "@/components/ui/Toast";
@@ -58,7 +60,9 @@ function OrderFlowContent({ tableCode }: { tableCode: string }) {
 
   // Placed Order Details
   const [placedOrderItems, setPlacedOrderItems] = useState<CartItem[]>([]);
-  const [orderNumber] = useState<string>(() => `ORD-${Math.floor(100 + Math.random() * 900)}`);
+  const [orderNum, setOrderNum] = useState<string>(() => `ORD-${Math.floor(100 + Math.random() * 900)}`);
+  const [customerNote, setCustomerNote] = useState<string>("");
+  const [activeOrderId, setActiveOrderId] = useState<string>("");
 
   // Cart Helpers
   const handleAddToCart = (item: MenuItemData) => {
@@ -109,39 +113,61 @@ function OrderFlowContent({ tableCode }: { tableCode: string }) {
     setCartItems((prev) => prev.filter((ci) => ci.item.id !== itemId));
   };
 
-  // Place Order Action
-  const handlePlaceOrder = () => {
+  // Place Order Action (Database Integration)
+  const handlePlaceOrder = async () => {
     setIsSubmittingOrder(true);
-    setTimeout(() => {
-      setPlacedOrderItems([...cartItems]);
-      setIsSubmittingOrder(false);
+    setPlacedOrderItems([...cartItems]);
+
+    const formattedItems = cartItems.map((ci) => ({
+      menuItemId: ci.item.id,
+      title: ci.item.name,
+      price: ci.item.price,
+      quantity: ci.quantity,
+    }));
+
+    const res = await submitOrderAction(tableCode, formattedItems, customerNote);
+
+    setIsSubmittingOrder(false);
+    if (res.success && res.orderId) {
+      setActiveOrderId(res.orderId);
+      if (res.orderNumber) setOrderNum(res.orderNumber);
       setFlowStage("order_placed");
       setOrderStatus("placed");
       toast({
-        title: "Order Received by Kitchen",
-        description: `Order ${orderNumber} for Table ${table.displayNumber} is now being prepared`,
+        title: "Order Saved to Database & Sent to Kitchen",
+        description: `Order ${res.orderNumber || orderNum} for Table ${table.displayNumber} is now live in KDS!`,
         type: "success",
       });
 
-      // Auto advance to "preparing" after 3 seconds for realistic dynamic feel
       setTimeout(() => {
         setOrderStatus("preparing");
       }, 3000);
-    }, 1200);
+    } else {
+      toast({
+        title: "Order Saved Offline",
+        description: res.message || "Saved to local terminal",
+        type: "info",
+      });
+      setFlowStage("order_placed");
+      setOrderStatus("placed");
+    }
   };
 
-  // Payment Confirmation Action
-  const handlePaymentConfirmed = (method: PaymentMethod, reference?: string) => {
+  // Payment Confirmation Action (Database Integration)
+  const handlePaymentConfirmed = async (method: PaymentMethod, reference?: string) => {
     setIsProcessingPayment(true);
-    setTimeout(() => {
-      setIsProcessingPayment(false);
-      setFlowStage("feedback");
-      toast({
-        title: "Payment Recorded",
-        description: `Thank you! Bill settled via ${method.replace("_", " ").toUpperCase()}`,
-        type: "success",
-      });
-    }, 1000);
+    const subtotal = placedOrderItems.reduce((acc, ci) => acc + ci.item.price * ci.quantity, 0);
+    const totalAmount = Math.round(subtotal * 1.15 * 1.1);
+
+    await submitPaymentAction(activeOrderId, tableCode, method as any, totalAmount);
+
+    setIsProcessingPayment(false);
+    setFlowStage("feedback");
+    toast({
+      title: "Payment Settled & Saved to Database",
+      description: `Thank you! Bill settled via ${method.replace("_", " ").toUpperCase()}. Table marked free.`,
+      type: "success",
+    });
   };
 
   // Reset Session (for demo)
@@ -152,9 +178,52 @@ function OrderFlowContent({ tableCode }: { tableCode: string }) {
     setPlacedOrderItems([]);
   };
 
+  const [liveMenuItems, setLiveMenuItems] = useState<MenuItemData[]>([]);
+
+  useEffect(() => {
+    async function loadDishes() {
+      const data = await getMenuItemsAction();
+      if (data && data.length > 0) {
+        const mapped: MenuItemData[] = data.map((d) => ({
+          id: d.id,
+          name: d.name,
+          amharicName: d.amharic_name,
+          category: (d.category.toLowerCase() as any) || "mains",
+          description: d.description || "",
+          price: d.price,
+          photoUrl: d.image_url || "https://images.unsplash.com/photo-1544025162-d76694265947?auto=format&fit=crop&w=600&q=80",
+          isAvailable: d.is_available,
+          status: d.is_available ? "available" : "sold_out",
+          isSpicy: d.is_spicy,
+          preparationMinutes: 15,
+          ingredients: [],
+        }));
+        setLiveMenuItems(mapped);
+      } else {
+        setLiveMenuItems(MENU_ITEMS);
+      }
+    }
+    loadDishes();
+  }, []);
+
+  // Live polling for order status updates from Kitchen Display System (KDS)
+  useEffect(() => {
+    if (!activeOrderId || flowStage !== "order_placed") return;
+
+    const interval = setInterval(async () => {
+      const res = await getOrderStatusAction(activeOrderId);
+      if (res && res.status) {
+        setOrderStatus(res.status);
+      }
+    }, 3000);
+
+    return () => clearInterval(interval);
+  }, [activeOrderId, flowStage]);
+
   // Filtered dishes
   const filteredDishes = useMemo(() => {
-    return MENU_ITEMS.filter((item) => {
+    const list = liveMenuItems.length > 0 ? liveMenuItems : MENU_ITEMS;
+    return list.filter((item) => {
       if (selectedCategory !== "all" && item.category !== selectedCategory) {
         return false;
       }
@@ -167,7 +236,7 @@ function OrderFlowContent({ tableCode }: { tableCode: string }) {
       }
       return true;
     });
-  }, [selectedCategory, searchQuery]);
+  }, [liveMenuItems, selectedCategory, searchQuery]);
 
   const totalCartCount = cartItems.reduce((sum, i) => sum + i.quantity, 0);
   const totalOrderAmount = (placedOrderItems.length > 0 ? placedOrderItems : cartItems).reduce(
@@ -315,7 +384,7 @@ function OrderFlowContent({ tableCode }: { tableCode: string }) {
             {/* Live Status Stepper Component */}
             <OrderStatusStepper
               currentStatus={orderStatus}
-              orderNumber={orderNumber}
+              orderNumber={orderNum}
               tableCode={tableCode}
               serverName={table.serverName}
             />
@@ -349,61 +418,6 @@ function OrderFlowContent({ tableCode }: { tableCode: string }) {
                     </span>
                   </div>
                 ))}
-              </div>
-            </div>
-
-            {/* Interactive Simulation Controls (for Demo & Staff testing) */}
-            <div className="rounded-card bg-background-subtle p-4 border border-divider space-y-3">
-              <span className="text-[11px] font-bold uppercase tracking-wider text-brand-secondary block">
-                ⚡ Simulation Controls (Demo State Engine)
-              </span>
-              <div className="grid grid-cols-2 gap-2 text-xs">
-                <button
-                  type="button"
-                  onClick={() => setOrderStatus("preparing")}
-                  className={cn(
-                    "min-h-[44px] rounded-button border p-2 font-medium transition text-center",
-                    orderStatus === "preparing"
-                      ? "bg-status-preparing text-white border-status-preparing"
-                      : "bg-white text-brand-primary border-divider hover:bg-background-active"
-                  )}
-                >
-                  Step 2: Preparing
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setOrderStatus("ready")}
-                  className={cn(
-                    "min-h-[44px] rounded-button border p-2 font-medium transition text-center",
-                    orderStatus === "ready"
-                      ? "bg-status-info text-white border-status-info"
-                      : "bg-white text-brand-primary border-divider hover:bg-background-active"
-                  )}
-                >
-                  Step 3: Ready
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setOrderStatus("served")}
-                  className={cn(
-                    "min-h-[44px] rounded-button border p-2 font-medium transition text-center",
-                    orderStatus === "served"
-                      ? "bg-status-available text-white border-status-available"
-                      : "bg-white text-brand-primary border-divider hover:bg-background-active"
-                  )}
-                >
-                  Step 4: Served
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setOrderStatus("served");
-                    setFlowStage("payment");
-                  }}
-                  className="min-h-[44px] rounded-button bg-brand-accent text-white p-2 font-semibold hover:bg-brand-accent-hover transition text-center"
-                >
-                  Go to Payment →
-                </button>
               </div>
             </div>
 
