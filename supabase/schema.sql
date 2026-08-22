@@ -142,6 +142,40 @@ CREATE TABLE IF NOT EXISTS training_checklist (
     verified_by UUID REFERENCES staff(id)
 );
 
+-- 3.4.2 Clock-In Logs & Attendance Records
+CREATE TABLE IF NOT EXISTS clock_in_logs (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    restaurant_id UUID NOT NULL REFERENCES restaurants(id) ON DELETE CASCADE,
+    staff_id UUID NOT NULL REFERENCES staff(id) ON DELETE CASCADE,
+    clock_in_time TIMESTAMPTZ NOT NULL DEFAULT now(),
+    clock_out_time TIMESTAMPTZ,
+    status TEXT DEFAULT 'on_time',
+    created_at TIMESTAMPTZ DEFAULT now()
+);
+
+-- 3.4.3 Leave Requests
+CREATE TABLE IF NOT EXISTS leave_requests (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    restaurant_id UUID NOT NULL REFERENCES restaurants(id) ON DELETE CASCADE,
+    staff_id UUID NOT NULL REFERENCES staff(id) ON DELETE CASCADE,
+    leave_type TEXT NOT NULL DEFAULT 'Annual Leave',
+    start_date DATE NOT NULL,
+    end_date DATE NOT NULL,
+    reason TEXT,
+    status TEXT DEFAULT 'pending',
+    created_at TIMESTAMPTZ DEFAULT now()
+);
+
+-- 3.4.1 Dining Sections (Dynamic Floor Zones)
+CREATE TABLE IF NOT EXISTS dining_sections (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    restaurant_id UUID NOT NULL REFERENCES restaurants(id) ON DELETE CASCADE,
+    name TEXT NOT NULL UNIQUE,
+    description TEXT,
+    display_order INT DEFAULT 0,
+    created_at TIMESTAMPTZ DEFAULT now()
+);
+
 -- 3.5 Tables (Floor Layout & QR Codes)
 CREATE TABLE IF NOT EXISTS tables (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -149,6 +183,7 @@ CREATE TABLE IF NOT EXISTS tables (
     table_number INT NOT NULL,
     capacity INT DEFAULT 4,
     unique_code TEXT UNIQUE NOT NULL,
+    section_name TEXT DEFAULT 'Main Dining Hall',
     assigned_staff_id UUID REFERENCES staff(id) ON DELETE SET NULL,
     status table_status_enum DEFAULT 'free',
     current_order_id UUID,

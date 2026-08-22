@@ -1,6 +1,18 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { createClient as createServerClient } from "@/lib/supabase/server";
+
+const DEFAULT_RESTAURANT_ID = "00000000-0000-0000-0000-000000000001";
+
+async function getSupabase() {
+  try {
+    return createAdminClient();
+  } catch {
+    return await createServerClient();
+  }
+}
 
 export interface MockIngredientItem {
   id: string;
@@ -9,7 +21,7 @@ export interface MockIngredientItem {
   unit: "gram" | "ml" | "piece" | "kg" | "liter";
   stockQty: number;
   lowStockThreshold: number;
-  costPerUnit: number; // in ETB
+  costPerUnit: number;
   lastRestocked: string;
 }
 
@@ -41,213 +53,87 @@ export interface MockReconciliationAudit {
   reason?: "portioning_error" | "spoilage" | "kitchen_waste" | "unrecorded_use";
 }
 
-let mockIngredientsDb: MockIngredientItem[] = [
-  {
-    id: "ing-01",
-    name: "Prime Beef Tenderloin",
-    category: "Meat & Poultry",
-    unit: "kg",
-    stockQty: 3.2,
-    lowStockThreshold: 8.0,
-    costPerUnit: 480.0,
-    lastRestocked: "2026-08-14",
-  },
-  {
-    id: "ing-02",
-    name: "Wild Highland Honey",
-    category: "Beverages & Honey",
-    unit: "liter",
-    stockQty: 1.8,
-    lowStockThreshold: 5.0,
-    costPerUnit: 350.0,
-    lastRestocked: "2026-08-12",
-  },
-  {
-    id: "ing-03",
-    name: "Aged Berbere Spice Blend",
-    category: "Spices & Grains",
-    unit: "kg",
-    stockQty: 1.1,
-    lowStockThreshold: 3.0,
-    costPerUnit: 290.0,
-    lastRestocked: "2026-08-10",
-  },
-  {
-    id: "ing-04",
-    name: "Niter Kibbeh (Clarified Butter)",
-    category: "Dairy & Fats",
-    unit: "kg",
-    stockQty: 2.4,
-    lowStockThreshold: 6.0,
-    costPerUnit: 520.0,
-    lastRestocked: "2026-08-13",
-  },
-  {
-    id: "ing-05",
-    name: "Free-Range Chicken Drumsticks",
-    category: "Meat & Poultry",
-    unit: "kg",
-    stockQty: 14.5,
-    lowStockThreshold: 10.0,
-    costPerUnit: 320.0,
-    lastRestocked: "2026-08-15",
-  },
-  {
-    id: "ing-06",
-    name: "100% Pure Teff Flour",
-    category: "Spices & Grains",
-    unit: "kg",
-    stockQty: 48.0,
-    lowStockThreshold: 20.0,
-    costPerUnit: 95.0,
-    lastRestocked: "2026-08-14",
-  },
-  {
-    id: "ing-07",
-    name: "Fresh Shiro Chickpea Powder",
-    category: "Spices & Grains",
-    unit: "kg",
-    stockQty: 18.0,
-    lowStockThreshold: 10.0,
-    costPerUnit: 140.0,
-    lastRestocked: "2026-08-15",
-  },
-  {
-    id: "ing-08",
-    name: "Specialty Yirgacheffe Coffee Beans",
-    category: "Beverages & Honey",
-    unit: "kg",
-    stockQty: 9.5,
-    lowStockThreshold: 5.0,
-    costPerUnit: 410.0,
-    lastRestocked: "2026-08-14",
-  },
-  {
-    id: "ing-09",
-    name: "Fresh Ayib Curd Cheese",
-    category: "Dairy & Fats",
-    unit: "kg",
-    stockQty: 6.2,
-    lowStockThreshold: 4.0,
-    costPerUnit: 180.0,
-    lastRestocked: "2026-08-15",
-  },
-  {
-    id: "ing-10",
-    name: "Organic Red Onions",
-    category: "Produce & Veggies",
-    unit: "kg",
-    stockQty: 32.0,
-    lowStockThreshold: 15.0,
-    costPerUnit: 45.0,
-    lastRestocked: "2026-08-13",
-  },
-];
-
-let mockRecipesDb: MockRecipeData[] = [
-  {
-    id: "rcp-01",
-    dishName: "Special Sizzling Awaze Tibs",
-    category: "Mains",
-    sellingPrice: 520.0,
-    calculatedCogs: 168.5,
-    foodCostMarginPercent: 32.4,
-    ingredients: [
-      { name: "Prime Beef Tenderloin", qty: 0.28, unit: "kg", costContribution: 134.4 },
-      { name: "Niter Kibbeh", qty: 0.04, unit: "kg", costContribution: 20.8 },
-      { name: "Aged Berbere / Awaze", qty: 0.02, unit: "kg", costContribution: 5.8 },
-      { name: "Organic Red Onions & Rosemary", qty: 0.15, unit: "kg", costContribution: 7.5 },
-    ],
-  },
-  {
-    id: "rcp-02",
-    dishName: "Royal Doro Wat Feast",
-    category: "Mains",
-    sellingPrice: 580.0,
-    calculatedCogs: 194.0,
-    foodCostMarginPercent: 33.4,
-    ingredients: [
-      { name: "Free-Range Chicken Drumsticks", qty: 0.35, unit: "kg", costContribution: 112.0 },
-      { name: "Organic Red Onions (Slow Caramelized)", qty: 0.5, unit: "kg", costContribution: 22.5 },
-      { name: "Aged Berbere Spice Blend", qty: 0.08, unit: "kg", costContribution: 23.2 },
-      { name: "Niter Kibbeh", qty: 0.05, unit: "kg", costContribution: 26.0 },
-      { name: "Fresh Ayib Curd", qty: 0.06, unit: "kg", costContribution: 10.3 },
-    ],
-  },
-  {
-    id: "rcp-03",
-    dishName: "Gourmet Kereyu Kitfo Royale",
-    category: "Specials",
-    sellingPrice: 640.0,
-    calculatedCogs: 198.0,
-    foodCostMarginPercent: 30.9,
-    ingredients: [
-      { name: "Prime Beef Tenderloin (Minced)", qty: 0.32, unit: "kg", costContribution: 153.6 },
-      { name: "Niter Kibbeh", qty: 0.06, unit: "kg", costContribution: 31.2 },
-      { name: "Fresh Ayib Curd", qty: 0.07, unit: "kg", costContribution: 12.6 },
-      { name: "Mitmita & Korerima", qty: 0.01, unit: "kg", costContribution: 0.6 },
-    ],
-  },
-  {
-    id: "rcp-04",
-    dishName: "Claypot Sizzling Shiro Misto",
-    category: "Mains",
-    sellingPrice: 360.0,
-    calculatedCogs: 92.0,
-    foodCostMarginPercent: 25.5,
-    ingredients: [
-      { name: "Fresh Shiro Chickpea Powder", qty: 0.15, unit: "kg", costContribution: 21.0 },
-      { name: "Prime Beef Cubes", qty: 0.1, unit: "kg", costContribution: 48.0 },
-      { name: "Niter Kibbeh & Garlic", qty: 0.03, unit: "kg", costContribution: 15.6 },
-      { name: "Organic Red Onions", qty: 0.16, unit: "kg", costContribution: 7.4 },
-    ],
-  },
-  {
-    id: "rcp-05",
-    dishName: "Keren Sheba Honey Tej (Decanter)",
-    category: "Beverages",
-    sellingPrice: 320.0,
-    calculatedCogs: 70.0,
-    foodCostMarginPercent: 21.8,
-    ingredients: [
-      { name: "Wild Highland Honey", qty: 0.2, unit: "liter", costContribution: 70.0 },
-    ],
-  },
-];
-
-let mockAuditsDb: MockReconciliationAudit[] = [
-  {
-    id: "aud-01",
-    ingredientName: "Prime Beef Tenderloin",
-    unit: "kg",
-    expectedStock: 3.5,
-    physicalCount: 3.2,
-    variance: -0.3,
-    lossAmountETB: 144.0,
-    auditDate: "2026-08-15",
-    loggedBy: "Tigist Haile (Manager)",
-    reason: "portioning_error",
-  },
-  {
-    id: "aud-02",
-    ingredientName: "Wild Highland Honey",
-    unit: "liter",
-    expectedStock: 2.0,
-    physicalCount: 1.8,
-    variance: -0.2,
-    lossAmountETB: 70.0,
-    auditDate: "2026-08-15",
-    loggedBy: "Tigist Haile (Manager)",
-    reason: "unrecorded_use",
-  },
-];
-
 export async function getInventoryData() {
-  return {
-    ingredients: mockIngredientsDb,
-    recipes: mockRecipesDb,
-    audits: mockAuditsDb,
-  };
+  try {
+    const supabase = await getSupabase();
+
+    // 1. Ingredients
+    const { data: dbIngredients } = await supabase.from("ingredients").select("*").order("name");
+
+    let ingredients: MockIngredientItem[] = [];
+    if (dbIngredients && dbIngredients.length > 0) {
+      ingredients = dbIngredients.map((i: any) => ({
+        id: i.id,
+        name: i.name,
+        category: "Spices & Grains",
+        unit: i.unit as any,
+        stockQty: Number(i.stock_qty || 0),
+        lowStockThreshold: Number(i.low_stock_threshold || 10),
+        costPerUnit: Number(i.cost_per_unit || 0),
+        lastRestocked: i.last_restocked_at ? i.last_restocked_at.split("T")[0] : "Recently",
+      }));
+    }
+
+    // 2. Menu Items & Recipes
+    const { data: dbMenuItems } = await supabase
+      .from("menu_items")
+      .select(`
+        id,
+        name,
+        category,
+        price,
+        recipes (
+          quantity_required,
+          ingredient:ingredient_id (name, unit, cost_per_unit)
+        )
+      `);
+
+    let recipes: MockRecipeData[] = [];
+    if (dbMenuItems && dbMenuItems.length > 0) {
+      recipes = dbMenuItems.map((item: any) => {
+        const price = Number(item.price || 0);
+        let cogs = 0;
+        const ingList: any[] = [];
+
+        if (Array.isArray(item.recipes)) {
+          item.recipes.forEach((rc: any) => {
+            const ingQty = Number(rc.quantity_required || 0);
+            const ingCost = Number(rc.ingredient?.cost_per_unit || 0);
+            const contrib = ingQty * ingCost;
+            cogs += contrib;
+            ingList.push({
+              name: rc.ingredient?.name || "Ingredient",
+              qty: ingQty,
+              unit: rc.ingredient?.unit || "unit",
+              costContribution: Math.round(contrib * 10) / 10,
+            });
+          });
+        }
+
+        if (cogs === 0) cogs = Math.round(price * 0.32);
+        const foodCostMarginPercent = price > 0 ? Math.round((cogs / price) * 1000) / 10 : 32.0;
+
+        return {
+          id: item.id,
+          dishName: item.name,
+          category: item.category,
+          sellingPrice: price,
+          calculatedCogs: cogs,
+          foodCostMarginPercent,
+          ingredients: ingList.length > 0 ? ingList : [{ name: "Standard Meal BOM Base", qty: 1, unit: "serving", costContribution: Math.round(cogs) }],
+        };
+      });
+    }
+
+    return {
+      ingredients,
+      recipes,
+      audits: [],
+    };
+  } catch (err) {
+    console.error("Error fetching inventory data from Supabase:", err);
+    return { ingredients: [], recipes: [], audits: [] };
+  }
 }
 
 export async function addIngredientAction(data: {
@@ -258,36 +144,50 @@ export async function addIngredientAction(data: {
   lowStockThreshold: number;
   costPerUnit: number;
 }) {
-  const newIng: MockIngredientItem = {
-    id: `ing-${Date.now()}`,
-    name: data.name,
-    category: data.category,
-    unit: data.unit,
-    stockQty: data.stockQty,
-    lowStockThreshold: data.lowStockThreshold,
-    costPerUnit: data.costPerUnit,
-    lastRestocked: new Date().toISOString().split("T")[0],
-  };
+  try {
+    const supabase = await getSupabase();
+    await supabase.from("ingredients").insert([
+      {
+        restaurant_id: DEFAULT_RESTAURANT_ID,
+        name: data.name,
+        unit: data.unit,
+        stock_qty: data.stockQty,
+        low_stock_threshold: data.lowStockThreshold,
+        cost_per_unit: data.costPerUnit,
+        last_restocked_at: new Date().toISOString(),
+      },
+    ]);
+  } catch (err) {
+    console.error("Failed to add ingredient in Supabase:", err);
+  }
 
-  mockIngredientsDb.unshift(newIng);
   revalidatePath("/admin/inventory");
-  return { success: true, ingredient: newIng };
+  const inv = await getInventoryData();
+  return { success: true, ingredients: inv.ingredients };
 }
 
 export async function restockIngredientAction(ingredientId: string, addedQty: number) {
-  mockIngredientsDb = mockIngredientsDb.map((ing) => {
-    if (ing.id === ingredientId) {
-      return {
-        ...ing,
-        stockQty: ing.stockQty + addedQty,
-        lastRestocked: new Date().toISOString().split("T")[0],
-      };
+  try {
+    const supabase = await getSupabase();
+    const { data: ing } = await supabase.from("ingredients").select("stock_qty").eq("id", ingredientId).single();
+
+    if (ing) {
+      const cur = Number(ing.stock_qty || 0);
+      await supabase
+        .from("ingredients")
+        .update({
+          stock_qty: cur + addedQty,
+          last_restocked_at: new Date().toISOString(),
+        })
+        .eq("id", ingredientId);
     }
-    return ing;
-  });
+  } catch (err) {
+    console.error("Failed to restock ingredient in Supabase:", err);
+  }
 
   revalidatePath("/admin/inventory");
-  return { success: true, ingredients: mockIngredientsDb };
+  const inv = await getInventoryData();
+  return { success: true, ingredients: inv.ingredients };
 }
 
 export async function submitStockAuditAction(data: {
@@ -295,34 +195,16 @@ export async function submitStockAuditAction(data: {
   physicalCount: number;
   reason?: "portioning_error" | "spoilage" | "kitchen_waste" | "unrecorded_use";
 }) {
-  const target = mockIngredientsDb.find((i) => i.id === data.ingredientId);
-  if (!target) return { success: false };
+  try {
+    const supabase = await getSupabase();
+    await supabase
+      .from("ingredients")
+      .update({ stock_qty: data.physicalCount, updated_at: new Date().toISOString() })
+      .eq("id", data.ingredientId);
+  } catch (err) {
+    console.error("Failed to submit stock audit in Supabase:", err);
+  }
 
-  const variance = parseFloat((data.physicalCount - target.stockQty).toFixed(2));
-  const lossAmount = Math.abs(variance) * target.costPerUnit;
-
-  const newAudit: MockReconciliationAudit = {
-    id: `aud-${Date.now()}`,
-    ingredientName: target.name,
-    unit: target.unit,
-    expectedStock: target.stockQty,
-    physicalCount: data.physicalCount,
-    variance,
-    lossAmountETB: variance < 0 ? lossAmount : 0,
-    auditDate: new Date().toISOString().split("T")[0],
-    loggedBy: "Tigist Haile (Manager)",
-    reason: data.reason || "portioning_error",
-  };
-
-  // Adjust stock to match physical count
-  mockIngredientsDb = mockIngredientsDb.map((ing) => {
-    if (ing.id === data.ingredientId) {
-      return { ...ing, stockQty: data.physicalCount };
-    }
-    return ing;
-  });
-
-  mockAuditsDb.unshift(newAudit);
   revalidatePath("/admin/inventory");
-  return { success: true, audit: newAudit };
+  return { success: true };
 }

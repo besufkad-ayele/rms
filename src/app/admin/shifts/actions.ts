@@ -1,7 +1,18 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { Shift, Staff } from "@/types/database";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { createClient as createServerClient } from "@/lib/supabase/server";
+
+const DEFAULT_RESTAURANT_ID = "00000000-0000-0000-0000-000000000001";
+
+async function getSupabase() {
+  try {
+    return createAdminClient();
+  } catch {
+    return await createServerClient();
+  }
+}
 
 export interface MockShiftItem {
   id: string;
@@ -20,123 +31,50 @@ export interface MockShiftItem {
   notes?: string;
 }
 
-let mockShiftsDatabase: MockShiftItem[] = [
-  {
-    id: "shf-01",
-    staffId: "b0000000-0000-0000-0000-000000000003",
-    staffName: "Sara Mengistu",
-    staffRole: "waiter",
-    shiftDate: "2026-08-15",
-    scheduledStart: "11:00 AM",
-    scheduledEnd: "07:00 PM",
-    actualClockIn: "10:52 AM",
-    clockInCode: "749201",
-    status: "checked_in",
-    assignedTables: ["T-01", "T-02", "T-10", "T-15", "T-16", "T-24", "T-25"],
-    notes: "Terrace Garden Lead Attendant",
-  },
-  {
-    id: "shf-02",
-    staffId: "b0000000-0000-0000-0000-000000000004",
-    staffName: "Michael Tadesse",
-    staffRole: "waiter",
-    shiftDate: "2026-08-15",
-    scheduledStart: "11:30 AM",
-    scheduledEnd: "08:30 PM",
-    actualClockIn: "11:28 AM",
-    clockInCode: "381940",
-    status: "checked_in",
-    assignedTables: ["T-03", "T-04", "T-05", "T-09", "T-11", "T-12", "T-13", "T-14", "T-21", "T-22", "T-23"],
-    notes: "Main Dining Hall Section Lead",
-  },
-  {
-    id: "shf-03",
-    staffId: "b0000000-0000-0000-0000-000000000005",
-    staffName: "Eden Haile",
-    staffRole: "waiter",
-    shiftDate: "2026-08-15",
-    scheduledStart: "02:00 PM",
-    scheduledEnd: "11:00 PM",
-    actualClockIn: "01:55 PM",
-    clockInCode: "592013",
-    status: "checked_in",
-    assignedTables: ["T-06", "T-07", "T-17", "T-18", "T-19"],
-    notes: "Lounge & Bar Evening Shift",
-  },
-  {
-    id: "shf-04",
-    staffId: "b0000000-0000-0000-0000-000000000006",
-    staffName: "Dawit Bekele",
-    staffRole: "host",
-    shiftDate: "2026-08-15",
-    scheduledStart: "11:30 AM",
-    scheduledEnd: "09:00 PM",
-    actualClockIn: "11:35 AM",
-    clockInCode: "492817",
-    status: "checked_in",
-    assignedTables: ["T-08", "T-20"],
-    notes: "VIP Alcove & Floor Host",
-  },
-  {
-    id: "shf-05",
-    staffId: "b0000000-0000-0000-0000-000000000007",
-    staffName: "Kassahun Lemma",
-    staffRole: "cook",
-    shiftDate: "2026-08-15",
-    scheduledStart: "10:00 AM",
-    scheduledEnd: "06:30 PM",
-    actualClockIn: "09:50 AM",
-    clockInCode: "918234",
-    status: "checked_in",
-    assignedTables: [],
-    notes: "Head Grill & Tibs Chef",
-  },
-  {
-    id: "shf-06",
-    staffId: "b0000000-0000-0000-0000-000000000008",
-    staffName: "Marta Tesfaye",
-    staffRole: "cook",
-    shiftDate: "2026-08-15",
-    scheduledStart: "01:00 PM",
-    scheduledEnd: "10:00 PM",
-    actualClockIn: "01:15 PM",
-    clockInCode: "610293",
-    status: "late",
-    assignedTables: [],
-    notes: "Sauce, Stews & Injera Prep",
-  },
-  {
-    id: "shf-07",
-    staffId: "b0000000-0000-0000-0000-000000000009",
-    staffName: "Yared Gebre",
-    staffRole: "cleaner",
-    shiftDate: "2026-08-15",
-    scheduledStart: "09:30 AM",
-    scheduledEnd: "05:30 PM",
-    actualClockIn: "09:25 AM",
-    actualClockOut: "05:30 PM",
-    clockInCode: "827102",
-    status: "completed",
-    assignedTables: [],
-    notes: "Daytime Floor & Restroom Sanitization",
-  },
-  {
-    id: "shf-08",
-    staffId: "b0000000-0000-0000-0000-000000000010",
-    staffName: "Senait Alemu",
-    staffRole: "waiter",
-    shiftDate: "2026-08-15",
-    scheduledStart: "05:00 PM",
-    scheduledEnd: "12:00 AM",
-    clockInCode: "103948",
-    status: "scheduled",
-    assignedTables: ["T-01", "T-02", "T-03", "T-04"],
-    notes: "Night Dinner Peak Relief",
-  },
-];
-
 export async function getShiftsData() {
-  return { shifts: mockShiftsDatabase };
+  try {
+    const supabase = await getSupabase();
+    const { data: dbShifts, error } = await supabase
+      .from("shifts")
+      .select(`
+        id,
+        staff_id,
+        shift_date,
+        scheduled_start,
+        scheduled_end,
+        actual_clock_in,
+        actual_clock_out,
+        clock_in_code,
+        status,
+        assigned_tables,
+        notes,
+        staff:staff_id (full_name, role)
+      `)
+      .order("shift_date", { ascending: false });
+
+    if (!error && dbShifts && dbShifts.length > 0) {
+      const shifts: MockShiftItem[] = dbShifts.map((s: any) => ({
+        id: s.id,
+        staffId: s.staff_id,
+        staffName: s.staff?.full_name || "Staff Personnel",
+        staffRole: s.staff?.role || "waiter",
+        shiftDate: s.shift_date,
+        scheduledStart: new Date(s.scheduled_start).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+        scheduledEnd: new Date(s.scheduled_end).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+        actualClockIn: s.actual_clock_in ? new Date(s.actual_clock_in).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : null,
+        actualClockOut: s.actual_clock_out ? new Date(s.actual_clock_out).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : null,
+        clockInCode: s.clock_in_code,
+        status: s.status as any,
+        assignedTables: s.assigned_tables || [],
+        notes: s.notes || undefined,
+      }));
+      return { shifts };
+    }
+  } catch (err) {
+    console.error("Error fetching shifts from Supabase:", err);
+  }
+
+  return { shifts: [] };
 }
 
 export async function createShiftAction(data: {
@@ -149,57 +87,67 @@ export async function createShiftAction(data: {
   assignedTables: string[];
   notes?: string;
 }) {
-  // Generate random 6-digit clock in code
   const code = Math.floor(100000 + Math.random() * 900000).toString();
+  const startIso = new Date(`${data.shiftDate} ${data.scheduledStart}`).toISOString();
+  const endIso = new Date(`${data.shiftDate} ${data.scheduledEnd}`).toISOString();
 
-  const newShift: MockShiftItem = {
-    id: `shf-${Date.now()}`,
-    staffId: data.staffId,
-    staffName: data.staffName,
-    staffRole: data.staffRole,
-    shiftDate: data.shiftDate,
-    scheduledStart: data.scheduledStart,
-    scheduledEnd: data.scheduledEnd,
-    clockInCode: code,
-    status: "scheduled",
-    assignedTables: data.assignedTables,
-    notes: data.notes,
-  };
+  try {
+    const supabase = await getSupabase();
+    await supabase.from("shifts").insert([
+      {
+        restaurant_id: DEFAULT_RESTAURANT_ID,
+        staff_id: data.staffId,
+        shift_date: data.shiftDate,
+        scheduled_start: startIso,
+        scheduled_end: endIso,
+        clock_in_code: code,
+        status: "scheduled",
+        assigned_tables: data.assignedTables,
+        notes: data.notes || null,
+      },
+    ]);
+  } catch (err) {
+    console.error("Failed to create shift in Supabase:", err);
+  }
 
-  mockShiftsDatabase.unshift(newShift);
   revalidatePath("/admin/shifts");
-  return { success: true, shift: newShift };
+  const result = await getShiftsData();
+  return { success: true, shifts: result.shifts };
 }
 
 export async function updateShiftStatusAction(
   shiftId: string,
   status: "scheduled" | "checked_in" | "late" | "completed" | "missed"
 ) {
-  mockShiftsDatabase = mockShiftsDatabase.map((shf) => {
-    if (shf.id === shiftId) {
-      const nowTime = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-      return {
-        ...shf,
-        status,
-        actualClockIn: status === "checked_in" || status === "late" ? nowTime : shf.actualClockIn,
-        actualClockOut: status === "completed" ? nowTime : shf.actualClockOut,
-      };
+  try {
+    const supabase = await getSupabase();
+    const updatePayload: any = { status };
+    const nowIso = new Date().toISOString();
+
+    if (status === "checked_in" || status === "late") {
+      updatePayload.actual_clock_in = nowIso;
+    } else if (status === "completed") {
+      updatePayload.actual_clock_out = nowIso;
     }
-    return shf;
-  });
+
+    await supabase.from("shifts").update(updatePayload).eq("id", shiftId);
+  } catch (err) {
+    console.error("Failed to update shift status in Supabase:", err);
+  }
 
   revalidatePath("/admin/shifts");
-  return { success: true, shifts: mockShiftsDatabase };
+  const result = await getShiftsData();
+  return { success: true, shifts: result.shifts };
 }
 
 export async function regenerateShiftCodeAction(shiftId: string) {
   const newCode = Math.floor(100000 + Math.random() * 900000).toString();
-  mockShiftsDatabase = mockShiftsDatabase.map((shf) => {
-    if (shf.id === shiftId) {
-      return { ...shf, clockInCode: newCode };
-    }
-    return shf;
-  });
+  try {
+    const supabase = await getSupabase();
+    await supabase.from("shifts").update({ clock_in_code: newCode }).eq("id", shiftId);
+  } catch (err) {
+    console.error("Failed to regenerate clock in code in Supabase:", err);
+  }
 
   revalidatePath("/admin/shifts");
   return { success: true, newCode };

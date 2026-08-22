@@ -1,9 +1,19 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { createClient as createServerClient } from "@/lib/supabase/server";
+
+async function getSupabase() {
+  try {
+    return createAdminClient();
+  } catch {
+    return await createServerClient();
+  }
+}
 
 export interface MockAdminOrder {
-  id: string;
+  id: string
   orderNumber: string;
   tableCode: string;
   channel: "dine_in" | "takeout" | "delivery";
@@ -22,154 +32,103 @@ export interface MockAdminOrder {
   }[];
 }
 
-let mockOrdersDb: MockAdminOrder[] = [
-  {
-    id: "ord-104",
-    orderNumber: "#KD-402",
-    tableCode: "T-04",
-    channel: "dine_in",
-    status: "placed",
-    waiterName: "Michael Tadesse",
-    totalAmount: 1160,
-    calculatedCogs: 366.5,
-    createdAt: "10 mins ago",
-    customerNotes: "Extra awaze on side, mild spice for kitfo",
-    items: [
-      { name: "Special Sizzling Awaze Tibs", quantity: 1, unitPrice: 520, subtotal: 520, notes: "Extra rosemary" },
-      { name: "Gourmet Kereyu Kitfo Royale", quantity: 1, unitPrice: 640, subtotal: 640, notes: "Mild mitmita" },
-    ],
-  },
-  {
-    id: "ord-110",
-    orderNumber: "#KD-401",
-    tableCode: "T-15",
-    channel: "dine_in",
-    status: "placed",
-    waiterName: "Sara Mengistu",
-    totalAmount: 780,
-    calculatedCogs: 245.0,
-    createdAt: "14 mins ago",
-    items: [
-      { name: "Claypot Sizzling Shiro Misto", quantity: 1, unitPrice: 360, subtotal: 360 },
-      { name: "Keren Sheba Honey Tej (Decanter)", quantity: 1, unitPrice: 320, subtotal: 320 },
-      { name: "Single-Origin Yirgacheffe Pour-Over", quantity: 1, unitPrice: 100, subtotal: 100 },
-    ],
-  },
-  {
-    id: "ord-103",
-    orderNumber: "#KD-398",
-    tableCode: "T-03",
-    channel: "dine_in",
-    status: "preparing",
-    waiterName: "Michael Tadesse",
-    totalAmount: 2180,
-    calculatedCogs: 690.0,
-    createdAt: "22 mins ago",
-    items: [
-      { name: "Wood-Fired Lamb Derek Tibs", quantity: 2, unitPrice: 590, subtotal: 1180 },
-      { name: "Yetsom Beyaynetu (Fasting Platter)", quantity: 1, unitPrice: 440, subtotal: 440 },
-      { name: "Single-Origin Yirgacheffe Pour-Over", quantity: 2, unitPrice: 160, subtotal: 320 },
-      { name: "Spiced Cardamom & Honey Baklava", quantity: 1, unitPrice: 240, subtotal: 240 },
-    ],
-  },
-  {
-    id: "ord-107",
-    orderNumber: "#KD-397",
-    tableCode: "T-11",
-    channel: "dine_in",
-    status: "preparing",
-    waiterName: "Michael Tadesse",
-    totalAmount: 1890,
-    calculatedCogs: 598.0,
-    createdAt: "28 mins ago",
-    items: [
-      { name: "Special Sizzling Awaze Tibs", quantity: 2, unitPrice: 520, subtotal: 1040 },
-      { name: "Spiced Cardamom & Honey Baklava", quantity: 2, unitPrice: 240, subtotal: 480 },
-      { name: "Keren Sheba Honey Tej (Decanter)", quantity: 1, unitPrice: 320, subtotal: 320 },
-    ],
-  },
-  {
-    id: "ord-101",
-    orderNumber: "#KD-394",
-    tableCode: "T-01",
-    channel: "dine_in",
-    status: "ready",
-    waiterName: "Sara Mengistu",
-    totalAmount: 840,
-    calculatedCogs: 274.0,
-    createdAt: "34 mins ago",
-    items: [
-      { name: "Claypot Sizzling Shiro Misto", quantity: 1, unitPrice: 360, subtotal: 360 },
-      { name: "Spiced Cardamom & Honey Baklava", quantity: 2, unitPrice: 240, subtotal: 480 },
-    ],
-  },
-  {
-    id: "ord-108",
-    orderNumber: "#KD-390",
-    tableCode: "T-12",
-    channel: "dine_in",
-    status: "served",
-    waiterName: "Michael Tadesse",
-    totalAmount: 1420,
-    calculatedCogs: 460.0,
-    createdAt: "48 mins ago",
-    items: [
-      { name: "Royal Doro Wat Feast", quantity: 2, unitPrice: 580, subtotal: 1160 },
-      { name: "Crispy Lentil & Beef Sambusa Trio", quantity: 1, unitPrice: 220, subtotal: 220 },
-    ],
-  },
-  {
-    id: "ord-095",
-    orderNumber: "#KD-380",
-    tableCode: "T-08",
-    channel: "dine_in",
-    status: "paid",
-    waiterName: "Dawit Bekele",
-    totalAmount: 4850,
-    calculatedCogs: 1520.0,
-    createdAt: "1h 30m ago",
-    items: [
-      { name: "Gourmet Kereyu Kitfo Royale", quantity: 3, unitPrice: 640, subtotal: 1920 },
-      { name: "Royal Doro Wat Feast", quantity: 2, unitPrice: 580, subtotal: 1160 },
-      { name: "Wood-Fired Lamb Derek Tibs", quantity: 2, unitPrice: 590, subtotal: 1180 },
-      { name: "Keren Sheba Honey Tej (Decanter)", quantity: 2, unitPrice: 320, subtotal: 640 },
-    ],
-  },
-];
+function formatTimeAgo(dateString: string): string {
+  const diffMs = Date.now() - new Date(dateString).getTime();
+  const diffMins = Math.max(1, Math.floor(diffMs / (1000 * 60)));
+  if (diffMins < 60) return `${diffMins} mins ago`;
+  const diffHours = Math.floor(diffMins / 60);
+  if (diffHours < 24) return `${diffHours}h ago`;
+  return `${Math.floor(diffHours / 24)}d ago`;
+}
 
 export async function getOrdersData() {
-  return { orders: mockOrdersDb };
+  try {
+    const supabase = await getSupabase();
+    const { data: dbOrders, error } = await supabase
+      .from("orders")
+      .select(`
+        id,
+        channel,
+        status,
+        total_amount,
+        calculated_cogs,
+        customer_notes,
+        created_at,
+        table:table_id (table_number, unique_code),
+        staff:staff_id (full_name),
+        order_items (
+          quantity,
+          unit_price,
+          subtotal,
+          menu_item:menu_item_id (name)
+        )
+      `)
+      .order("created_at", { ascending: false });
+
+    if (!error && dbOrders && dbOrders.length > 0) {
+      const orders: MockAdminOrder[] = dbOrders.map((o: any) => {
+        const items = Array.isArray(o.order_items)
+          ? o.order_items.map((item: any) => ({
+              name: item.menu_item?.name || "Dish Item",
+              quantity: item.quantity || 1,
+              unitPrice: Number(item.unit_price || 0),
+              subtotal: Number(item.subtotal || 0),
+            }))
+          : [];
+
+        return {
+          id: o.id,
+          orderNumber: `#KD-${o.id.slice(0, 4).toUpperCase()}`,
+          tableCode: o.table?.unique_code || "Takeout",
+          channel: (o.channel || "dine_in") as any,
+          status: o.status as any,
+          waiterName: o.staff?.full_name || "House Attendant",
+          totalAmount: Number(o.total_amount || 0),
+          calculatedCogs: Number(o.calculated_cogs || 0),
+          createdAt: formatTimeAgo(o.created_at),
+          customerNotes: o.customer_notes || undefined,
+          items: items.length > 0 ? items : [{ name: "Standard Meal Item", quantity: 1, unitPrice: Number(o.total_amount || 0), subtotal: Number(o.total_amount || 0) }],
+        };
+      });
+      return { orders };
+    }
+  } catch (err) {
+    console.error("Error fetching orders from Supabase:", err);
+  }
+
+  return { orders: [] };
 }
 
 export async function advanceOrderStatusAction(
   orderId: string,
   newStatus: MockAdminOrder["status"]
 ) {
-  mockOrdersDb = mockOrdersDb.map((o) => {
-    if (o.id === orderId) {
-      return { ...o, status: newStatus };
-    }
-    return o;
-  });
+  try {
+    const supabase = await getSupabase();
+    await supabase.from("orders").update({ status: newStatus }).eq("id", orderId);
+  } catch (err) {
+    console.error("Failed to advance order status in Supabase:", err);
+  }
 
   revalidatePath("/admin/orders");
   revalidatePath("/admin/dashboard");
-  return { success: true, orders: mockOrdersDb };
+  const res = await getOrdersData();
+  return { success: true, orders: res.orders };
 }
 
 export async function disputeOrderAction(orderId: string, reason: string) {
-  mockOrdersDb = mockOrdersDb.map((o) => {
-    if (o.id === orderId) {
-      return {
-        ...o,
-        status: "disputed" as const,
-        customerNotes: `Disputed: ${reason}`,
-      };
-    }
-    return o;
-  });
+  try {
+    const supabase = await getSupabase();
+    await supabase
+      .from("orders")
+      .update({ status: "disputed", customer_notes: `Disputed: ${reason}` })
+      .eq("id", orderId);
+  } catch (err) {
+    console.error("Failed to dispute order in Supabase:", err);
+  }
 
   revalidatePath("/admin/orders");
   revalidatePath("/admin/dashboard");
-  return { success: true, orders: mockOrdersDb };
+  const res = await getOrdersData();
+  return { success: true, orders: res.orders };
 }

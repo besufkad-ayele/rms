@@ -17,12 +17,20 @@ import {
   Printer,
   Sparkles,
   Layers,
+  Trash2,
+  FolderPlus,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   getTablesData,
   updateTableDetailsAction,
   createNewTableAction,
+  deleteTableAction,
+  getDiningSectionsAction,
+  createDiningSectionAction,
+  updateDiningSectionAction,
+  deleteDiningSectionAction,
+  DiningSection,
 } from "./actions";
 import { TableFloorState } from "@/data/mockDashboard";
 
@@ -30,6 +38,7 @@ export default function FloorTablesPage() {
   const [isPending, startTransition] = useTransition();
 
   const [tables, setTables] = useState<TableFloorState[]>([]);
+  const [diningSections, setDiningSections] = useState<DiningSection[]>([]);
   const [sectionFilter, setSectionFilter] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState<string>("");
 
@@ -37,17 +46,25 @@ export default function FloorTablesPage() {
   const [selectedQRTable, setSelectedQRTable] = useState<TableFloorState | null>(null);
   const [editingTable, setEditingTable] = useState<TableFloorState | null>(null);
   const [showAddModal, setShowAddModal] = useState<boolean>(false);
+  const [showSectionsModal, setShowSectionsModal] = useState<boolean>(false);
 
-  // Edit Form State
+  // Section Management State
+  const [newSecName, setNewSecName] = useState<string>("");
+  const [newSecDesc, setNewSecDesc] = useState<string>("");
+  const [editingSection, setEditingSection] = useState<DiningSection | null>(null);
+  const [editSecName, setEditSecName] = useState<string>("");
+  const [editSecDesc, setEditSecDesc] = useState<string>("");
+
+  // Table Edit Form State
   const [editCapacity, setEditCapacity] = useState<number>(4);
-  const [editSection, setEditSection] = useState<TableFloorState["section"]>("Main Dining Hall");
+  const [editSection, setEditSection] = useState<string>("Main Dining Hall");
   const [editAttendant, setEditAttendant] = useState<string>("Michael Tadesse");
   const [editStatus, setEditStatus] = useState<"free" | "occupied" | "reserved">("free");
 
   // New Table Form State
   const [newTableNum, setNewTableNum] = useState<number>(26);
   const [newCapacity, setNewCapacity] = useState<number>(4);
-  const [newSection, setNewSection] = useState<TableFloorState["section"]>("Main Dining Hall");
+  const [newSection, setNewSection] = useState<string>("Main Dining Hall");
   const [newAttendant, setNewAttendant] = useState<string>("Michael Tadesse");
 
   // Toast
@@ -59,8 +76,12 @@ export default function FloorTablesPage() {
   };
 
   const loadData = async () => {
-    const data = await getTablesData();
-    setTables(data.tables);
+    const [tablesRes, sectionsRes] = await Promise.all([
+      getTablesData(),
+      getDiningSectionsAction(),
+    ]);
+    setTables(tablesRes.tables);
+    setDiningSections(sectionsRes);
   };
 
   useEffect(() => {
@@ -81,6 +102,7 @@ export default function FloorTablesPage() {
   const freeCount = tables.filter((t) => t.status === "free").length;
   const reservedCount = tables.filter((t) => t.status === "reserved").length;
 
+  // Table Handlers
   const handleEditSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingTable) return;
@@ -112,9 +134,72 @@ export default function FloorTablesPage() {
       });
 
       if (res.success) {
+        setTables(res.tables);
         setShowAddModal(false);
-        showToast(`Table ${res.table.unique_code} registered!`);
-        loadData();
+        setNewTableNum((prev) => prev + 1);
+        showToast("New dining table registered!");
+      }
+    });
+  };
+
+  const handleDeleteTable = (table: TableFloorState) => {
+    if (!confirm(`Are you sure you want to delete Table ${table.unique_code}?`)) return;
+    startTransition(async () => {
+      const res = await deleteTableAction(table.id);
+      if (res.success) {
+        setTables(res.tables);
+        showToast(`Table ${table.unique_code} deleted successfully.`);
+      }
+    });
+  };
+
+  // Section CRUD Handlers
+  const handleCreateSection = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newSecName.trim()) return;
+
+    startTransition(async () => {
+      const res = await createDiningSectionAction(newSecName, newSecDesc);
+      if (res.success) {
+        setNewSecName("");
+        setNewSecDesc("");
+        showToast(`Section "${newSecName}" created successfully!`);
+        const updatedSecs = await getDiningSectionsAction();
+        setDiningSections(updatedSecs);
+      } else {
+        showToast(res.message || "Failed to create section.");
+      }
+    });
+  };
+
+  const handleUpdateSection = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingSection || !editSecName.trim()) return;
+
+    startTransition(async () => {
+      const res = await updateDiningSectionAction(editingSection.id, editSecName, editSecDesc);
+      if (res.success) {
+        setEditingSection(null);
+        showToast(`Section renamed to "${editSecName}"!`);
+        const updatedSecs = await getDiningSectionsAction();
+        setDiningSections(updatedSecs);
+      } else {
+        showToast(res.message || "Failed to update section.");
+      }
+    });
+  };
+
+  const handleDeleteSection = (sec: DiningSection) => {
+    if (!confirm(`Are you sure you want to delete section "${sec.name}"?`)) return;
+
+    startTransition(async () => {
+      const res = await deleteDiningSectionAction(sec.id);
+      if (res.success) {
+        showToast(`Section "${sec.name}" deleted.`);
+        const updatedSecs = await getDiningSectionsAction();
+        setDiningSections(updatedSecs);
+      } else {
+        showToast(res.message || "Failed to delete section.");
       }
     });
   };
@@ -138,19 +223,27 @@ export default function FloorTablesPage() {
               Module 03: Floor &amp; QR
             </span>
             <span className="text-[12px] text-brand-secondary">
-              • Friction-free QR Ordering &amp; Attendant Assignments
+              • Dynamic Database Sections &amp; Attendant Assignments
             </span>
           </div>
           <h1 className="font-header text-2xl font-bold text-brand-heading tracking-tight">
-            Floor Map &amp; Table Registry (25 Tables)
+            Floor Map &amp; Table Registry ({tables.length} Tables)
           </h1>
           <p className="font-sans text-xs text-brand-secondary mt-0.5">
-            Manage table capacities, floor sections, assigned lead waiters, and generate physical QR ordering cards.
+            Manage floor sections in database, table capacities, assigned lead waiters, and physical QR codes.
           </p>
         </div>
 
         {/* Action Controls */}
         <div className="flex flex-wrap items-center gap-2.5">
+          <button
+            onClick={() => setShowSectionsModal(true)}
+            className="flex items-center gap-2 rounded-button bg-bg-card px-3.5 py-2 text-xs font-semibold text-brand-primary border border-divider hover:bg-bg-active transition shadow-xs"
+          >
+            <Layers className="h-4 w-4 text-brand-accent" />
+            <span>Manage Sections ({diningSections.length})</span>
+          </button>
+
           <button
             onClick={() => {
               setNewTableNum(tables.length + 1);
@@ -165,7 +258,7 @@ export default function FloorTablesPage() {
           <button
             onClick={loadData}
             title="Refresh Floor"
-            className="flex items-center gap-1.5 rounded-button bg-bg-card px-3.5 py-2 text-xs font-semibold text-brand-primary border border-divider hover:bg-bg-active transition"
+            className="flex items-center gap-1.5 rounded-button bg-bg-card px-3 py-2 text-xs font-semibold text-brand-primary border border-divider hover:bg-bg-active transition"
           >
             <RefreshCw className={cn("h-3.5 w-3.5 text-brand-secondary", isPending && "animate-spin")} />
             <span>Refresh</span>
@@ -236,26 +329,31 @@ export default function FloorTablesPage() {
       <div className="rounded-card bg-white p-6 border border-divider shadow-card space-y-5">
         {/* Filters */}
         <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between pb-3 border-b border-divider">
-          {/* Section Pills */}
+          {/* Dynamic Section Pills from Database */}
           <div className="flex flex-wrap items-center gap-1.5">
-            {[
-              { id: "all", label: "All Sections" },
-              { id: "Main Dining Hall", label: "Main Hall" },
-              { id: "Terrace Garden", label: "Terrace" },
-              { id: "Lounge & Bar", label: "Lounge & Bar" },
-              { id: "VIP Alcove", label: "VIP Alcove" },
-            ].map((sec) => (
+            <button
+              onClick={() => setSectionFilter("all")}
+              className={cn(
+                "rounded-pill px-3 py-1 text-xs font-semibold transition",
+                sectionFilter === "all"
+                  ? "bg-brand-primary text-white"
+                  : "bg-bg-subtle text-brand-secondary hover:bg-bg-card hover:text-brand-primary"
+              )}
+            >
+              All Sections
+            </button>
+            {diningSections.map((sec) => (
               <button
                 key={sec.id}
-                onClick={() => setSectionFilter(sec.id)}
+                onClick={() => setSectionFilter(sec.name)}
                 className={cn(
                   "rounded-pill px-3 py-1 text-xs font-semibold transition",
-                  sectionFilter === sec.id
+                  sectionFilter === sec.name
                     ? "bg-brand-primary text-white"
                     : "bg-bg-subtle text-brand-secondary hover:bg-bg-card hover:text-brand-primary"
                 )}
               >
-                {sec.label}
+                {sec.name}
               </button>
             ))}
           </div>
@@ -273,7 +371,7 @@ export default function FloorTablesPage() {
           </div>
         </div>
 
-        {/* 25 Tables Card Grid */}
+        {/* Tables Card Grid */}
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
           {filteredTables.map((table) => {
             const isOccupied = table.status === "occupied";
@@ -296,7 +394,7 @@ export default function FloorTablesPage() {
                     <h3 className="font-header text-base font-bold text-brand-heading">
                       {table.unique_code}
                     </h3>
-                    <p className="text-[10px] text-brand-secondary">{table.section}</p>
+                    <p className="text-[10px] font-semibold text-brand-accent">{table.section}</p>
                   </div>
 
                   <span
@@ -344,8 +442,17 @@ export default function FloorTablesPage() {
                       setEditStatus(table.status);
                     }}
                     className="rounded-button p-1 text-brand-secondary hover:text-brand-primary hover:bg-bg-subtle"
+                    title="Edit Table Details"
                   >
                     <Edit2 className="h-3.5 w-3.5" />
+                  </button>
+
+                  <button
+                    onClick={() => handleDeleteTable(table)}
+                    className="rounded-button p-1 text-brand-secondary hover:text-status-danger hover:bg-status-danger-bg"
+                    title="Delete Table"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
                   </button>
 
                   <Link
@@ -362,6 +469,124 @@ export default function FloorTablesPage() {
           })}
         </div>
       </div>
+
+      {/* MODAL 0: Manage Dining Sections (CRUD) */}
+      {showSectionsModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4 animate-in fade-in">
+          <div className="w-full max-w-lg rounded-card bg-white p-6 shadow-elevated border border-divider space-y-5 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between border-b border-divider pb-3">
+              <div>
+                <h3 className="font-header text-lg font-bold text-brand-heading flex items-center gap-2">
+                  <Layers className="h-5 w-5 text-brand-accent" />
+                  Manage Dining Sections
+                </h3>
+                <p className="text-xs text-brand-secondary">
+                  Create, rename, or remove dynamic floor zones stored in Supabase.
+                </p>
+              </div>
+              <button
+                onClick={() => setShowSectionsModal(false)}
+                className="p-1 rounded-button text-brand-secondary hover:bg-bg-subtle"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            {/* Add New Section Form */}
+            <form onSubmit={handleCreateSection} className="rounded-card border border-divider bg-bg-subtle p-3.5 space-y-2 text-xs">
+              <p className="font-bold text-brand-primary flex items-center gap-1.5">
+                <FolderPlus className="h-4 w-4 text-brand-accent" />
+                Add New Floor Section
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <input
+                  type="text"
+                  placeholder="Section Name (e.g. Terrace)"
+                  value={newSecName}
+                  onChange={(e) => setNewSecName(e.target.value)}
+                  className="rounded-button border border-divider bg-white p-2 text-xs text-brand-primary"
+                  required
+                />
+                <input
+                  type="text"
+                  placeholder="Description (optional)"
+                  value={newSecDesc}
+                  onChange={(e) => setNewSecDesc(e.target.value)}
+                  className="rounded-button border border-divider bg-white p-2 text-xs text-brand-primary"
+                />
+              </div>
+              <button
+                type="submit"
+                disabled={isPending || !newSecName.trim()}
+                className="w-full py-1.5 rounded-button bg-brand-accent text-white font-bold text-xs hover:bg-brand-accentHover transition"
+              >
+                Save New Section
+              </button>
+            </form>
+
+            {/* Existing Sections List */}
+            <div className="space-y-2 text-xs">
+              <p className="font-bold text-brand-primary">Existing Sections ({diningSections.length})</p>
+              <div className="divide-y divide-divider border border-divider rounded-card overflow-hidden">
+                {diningSections.map((sec) => (
+                  <div key={sec.id} className="p-3 flex items-center justify-between hover:bg-bg-subtle/50 transition">
+                    {editingSection?.id === sec.id ? (
+                      <form onSubmit={handleUpdateSection} className="flex-1 flex items-center gap-2">
+                        <input
+                          type="text"
+                          value={editSecName}
+                          onChange={(e) => setEditSecName(e.target.value)}
+                          className="px-2 py-1 border border-divider rounded-button text-xs font-bold"
+                          required
+                        />
+                        <button type="submit" className="px-2 py-1 bg-brand-accent text-white rounded-button font-bold text-[11px]">
+                          Save
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setEditingSection(null)}
+                          className="px-2 py-1 border border-divider rounded-button text-[11px]"
+                        >
+                          Cancel
+                        </button>
+                      </form>
+                    ) : (
+                      <>
+                        <div>
+                          <p className="font-bold text-brand-primary text-xs">{sec.name}</p>
+                          {sec.description && (
+                            <p className="text-[11px] text-brand-secondary">{sec.description}</p>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <button
+                            onClick={() => {
+                              setEditingSection(sec);
+                              setEditSecName(sec.name);
+                              setEditSecDesc(sec.description || "");
+                            }}
+                            className="p-1 rounded-button text-brand-secondary hover:text-brand-primary hover:bg-bg-subtle"
+                            title="Rename Section"
+                          >
+                            <Edit2 className="h-3.5 w-3.5" />
+                          </button>
+                          <button
+                            onClick={() => handleDeleteSection(sec)}
+                            className="p-1 rounded-button text-brand-secondary hover:text-status-danger hover:bg-status-danger-bg"
+                            title="Delete Section"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* MODAL 1: QR Code Card Preview */}
       {selectedQRTable && (
@@ -380,7 +605,7 @@ export default function FloorTablesPage() {
             <div className="rounded-card border-2 border-dashed border-brand-accent/40 p-6 bg-bg-subtle space-y-4">
               <div className="space-y-1">
                 <p className="font-display font-bold text-xs uppercase tracking-widest text-brand-secondary">
-                  Admas Lounge &amp; Dining
+                  Keren Addis Restaurant &amp; Lounge
                 </p>
                 <h3 className="font-header text-2xl font-bold text-brand-heading">
                   Table {selectedQRTable.unique_code}
@@ -459,13 +684,14 @@ export default function FloorTablesPage() {
                   </label>
                   <select
                     value={editSection}
-                    onChange={(e) => setEditSection(e.target.value as any)}
+                    onChange={(e) => setEditSection(e.target.value)}
                     className="w-full rounded-button border border-divider bg-bg-subtle p-2 text-xs text-brand-primary font-semibold"
                   >
-                    <option value="Main Dining Hall">Main Dining Hall</option>
-                    <option value="Terrace Garden">Terrace Garden</option>
-                    <option value="Lounge & Bar">Lounge &amp; Bar</option>
-                    <option value="VIP Alcove">VIP Alcove</option>
+                    {diningSections.map((sec) => (
+                      <option key={sec.id} value={sec.name}>
+                        {sec.name}
+                      </option>
+                    ))}
                   </select>
                 </div>
               </div>
@@ -572,13 +798,14 @@ export default function FloorTablesPage() {
                 </label>
                 <select
                   value={newSection}
-                  onChange={(e) => setNewSection(e.target.value as any)}
+                  onChange={(e) => setNewSection(e.target.value)}
                   className="w-full rounded-button border border-divider bg-bg-subtle p-2 text-xs text-brand-primary font-semibold"
                 >
-                  <option value="Main Dining Hall">Main Dining Hall</option>
-                  <option value="Terrace Garden">Terrace Garden</option>
-                  <option value="Lounge & Bar">Lounge &amp; Bar</option>
-                  <option value="VIP Alcove">VIP Alcove</option>
+                  {diningSections.map((sec) => (
+                    <option key={sec.id} value={sec.name}>
+                      {sec.name}
+                    </option>
+                  ))}
                 </select>
               </div>
 

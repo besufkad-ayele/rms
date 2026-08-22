@@ -127,7 +127,7 @@ export default function ShiftsRosterPage() {
 
       if (res.success) {
         setShowScheduleModal(false);
-        showToast(`Shift scheduled for ${newStaffName} (Code: ${res.shift.clockInCode})`);
+        showToast(`Shift scheduled for ${newStaffName}!`);
         loadData();
       }
     });
