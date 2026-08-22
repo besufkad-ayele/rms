@@ -32,15 +32,17 @@ export const RESTAURANT_INFO = {
   tagline: "Artisan Ethiopian Gastronomy & Living Hospitality",
   description:
     "An elevated homage to ancient Ethiopian culinary traditions reimagined with contemporary culinary mastery, wood-fired hearth cooking, and legendary highland warmth in the heart of Addis Ababa.",
-  address: "Bole Medhanialem, Cape Verde Street, Addis Ababa, Ethiopia",
+  address: "Keren Addis, Cape Verde Street, Addis Ababa, Ethiopia",
+  latitude: 9.0611313959925,
+  longitude: 38.762250376615036,
   phone: "+251 911 234 567",
   email: "reservations@kerenaddis.et",
-  googleBusinessUrl: "https://maps.google.com/?q=Keren+Addis+Restaurant",
+  googleBusinessUrl: "https://www.google.com/maps/search/?api=1&query=9.0611313959925,38.762250376615036",
   cbeAccount: {
     bankName: "Commercial Bank of Ethiopia (CBE)",
     accountName: "KEREN ADDIS RESTAURANT & LOUNGE PLC",
     accountNumber: "1000 4829 1948 2",
-    branch: "Bole Medhanialem Branch",
+    branch: "Keren Addis Branch",
   },
   openingHours: [
     { day: "Monday – Thursday", hours: "11:30 AM – 11:00 PM" },

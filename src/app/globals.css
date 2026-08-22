@@ -36,9 +36,12 @@
   --color-status-prep: #0284C7;
   --color-status-prep-bg: #F0F9FF;
 
-  --font-sans: var(--font-montserrat), "Montserrat", system-ui, sans-serif;
-  --font-header: var(--font-lato), "Lato", system-ui, sans-serif;
-  --font-display: var(--font-lato), "Lato", system-ui, sans-serif;
+  --font-sans: "Nyala", "Noto Sans Ethiopic", system-ui, sans-serif;
+  --font-header: "Abenet", "Abyssinica SIL", "Noto Serif Ethiopic", serif;
+  --font-display: "Abenet", "Abyssinica SIL", "Noto Serif Ethiopic", serif;
+  --font-abenet: "Abenet", "Abyssinica SIL", "Noto Serif Ethiopic", serif;
+  --font-nyala: "Nyala", "Noto Sans Ethiopic", system-ui, sans-serif;
+  --font-zibriqriq: "Zibriqriq_1", "Zibriqriq", "Abyssinica SIL", "Washint", cursive, serif;
 
   --radius-card: 14px;
   --radius-button: 10px;
@@ -59,13 +62,26 @@
 body {
   background-color: var(--background);
   color: var(--foreground);
-  font-family: var(--font-montserrat), "Montserrat", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-family: var(--font-nyala), "Nyala", "Noto Sans Ethiopic", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
 h1, h2, h3, h4, h5, h6 {
-  font-family: var(--font-lato), "Lato", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-family: var(--font-abenet), "Abenet", "Abyssinica SIL", "Noto Serif Ethiopic", serif;
+}
+
+.font-abenet {
+  font-family: "Abenet", "Abyssinica SIL", "Noto Serif Ethiopic", serif !important;
+}
+
+.font-nyala {
+  font-family: "Nyala", "Noto Sans Ethiopic", system-ui, sans-serif !important;
+}
+
+.font-zibriqriq {
+  font-family: "Zibriqriq_1", "Zibriqriq", "Abyssinica SIL", cursive, serif !important;
+  font-weight: 700;
 }
 
 /* Custom scrollbar styling for category tabs */

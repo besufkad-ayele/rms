@@ -1,28 +1,43 @@
--- ==============================================================================
--- RESTAURANT MANAGEMENT SYSTEM (RMS) - MASTER SEED DATA
--- Seed File for Owner, Staff, Menu Items, Ingredients, & Recipes
--- ==============================================================================
+-- =====================================================================
+-- Keren Addis Restaurant OS - Production Database Seed File
+-- =====================================================================
 
--- 1. Default Restaurant Root
-INSERT INTO restaurants (id, name, address, phone, currency)
+-- 1. Create Default Restaurant Record
+INSERT INTO public.restaurants (id, name, address, phone, created_at)
 VALUES (
   '00000000-0000-0000-0000-000000000001',
-  'Tibeb Ethiopian Gastronomy & Lounge',
-  'Bole Medhanialem, Next to Atlas, Addis Ababa',
-  '+251911000000',
-  'ETB'
-)
-ON CONFLICT (id) DO UPDATE 
-SET name = EXCLUDED.name, address = EXCLUDED.address, phone = EXCLUDED.phone;
+  'Keren Addis Restaurant & Lounge',
+  'Keren Addis, Cape Verde Street, Addis Ababa, Ethiopia',
+  '+251911234567',
+  NOW()
+) ON CONFLICT (id) DO UPDATE SET
+  name = EXCLUDED.name,
+  address = EXCLUDED.address,
+  phone = EXCLUDED.phone;
 
--- 2. Seed Staff Accounts (Owner & Admin)
--- Owner Account
-INSERT INTO staff (
-  id, restaurant_id, full_name, personal_id_number, phone_number, email,
-  emergency_contact_name, emergency_contact_phone, address, date_of_birth,
-  employment_status, role, pin_code_hash, base_salary, permissions, performance_score
-)
-VALUES (
+-- 2. Seed Personnel / Staff Accounts (Including Super Admin Owner & Manager)
+INSERT INTO public.staff (
+  id,
+  restaurant_id,
+  full_name,
+  personal_id_number,
+  phone_number,
+  email,
+  emergency_contact_name,
+  emergency_contact_phone,
+  address,
+  date_of_birth,
+  date_hired,
+  employment_status,
+  role,
+  pin_code_hash,
+  base_salary,
+  permissions,
+  performance_score,
+  created_at
+) VALUES
+-- Super Admin / Owner Account
+(
   'b0000000-0000-0000-0000-000000000001',
   '00000000-0000-0000-0000-000000000001',
   'Abebe Kebede (Owner)',
@@ -31,25 +46,19 @@ VALUES (
   'owner@tibebrms.com',
   'Sara Kebede (Spouse)',
   '+251911998877',
-  'Bole, House 412, Addis Ababa',
+  'Keren Addis, House 412, Addis Ababa',
   '1985-04-12',
+  '2024-01-01',
   'active',
   'admin',
-  '123456',
+  'Owner@2026',
   0.00,
-  '{"can_manage_inventory":true,"can_view_finance":true,"can_manage_shifts":true,"can_manage_staff":true}',
-  5.00
-)
-ON CONFLICT (id) DO UPDATE 
-SET email = EXCLUDED.email, role = EXCLUDED.role, permissions = EXCLUDED.permissions;
-
+  '{"can_manage_inventory": true, "can_view_finance": true, "can_manage_shifts": true, "can_manage_staff": true}',
+  5.00,
+  NOW()
+),
 -- Operations Manager Account
-INSERT INTO staff (
-  id, restaurant_id, full_name, personal_id_number, phone_number, email,
-  emergency_contact_name, emergency_contact_phone, address, date_of_birth,
-  employment_status, role, pin_code_hash, base_salary, permissions, performance_score
-)
-VALUES (
+(
   'b0000000-0000-0000-0000-000000000002',
   '00000000-0000-0000-0000-000000000001',
   'Tigist Haile (Manager)',
@@ -60,23 +69,59 @@ VALUES (
   '+251922887766',
   'Gerji Condominium, Addis Ababa',
   '1991-08-20',
+  '2024-02-15',
   'active',
   'manager',
-  '123456',
+  'Admin@2026',
   25000.00,
-  '{"can_manage_inventory":true,"can_view_finance":true,"can_manage_shifts":true,"can_manage_staff":true}',
-  4.95
-)
-ON CONFLICT (id) DO UPDATE 
-SET email = EXCLUDED.email, role = EXCLUDED.role;
-
--- Waitstaff Account
-INSERT INTO staff (
-  id, restaurant_id, full_name, personal_id_number, phone_number, email,
-  emergency_contact_name, emergency_contact_phone, address, date_of_birth,
-  employment_status, role, pin_code_hash, base_salary, permissions, performance_score
-)
-VALUES (
+  '{"can_manage_inventory": true, "can_view_finance": true, "can_manage_shifts": true, "can_manage_staff": true}',
+  4.95,
+  NOW()
+),
+-- Inventory Manager Account
+(
+  'b0000000-0000-0000-0000-000000000003',
+  '00000000-0000-0000-0000-000000000001',
+  'Alemayehu Tura (Inventory)',
+  'ETH-FAYDA-39201948',
+  '+251944556677',
+  'inventory@tibebrms.com',
+  'Tura Bekele (Brother)',
+  '+251944112233',
+  'Keren Addis, Addis Ababa',
+  '1993-06-14',
+  '2024-03-01',
+  'active',
+  'manager',
+  'Inv@2026',
+  16000.00,
+  '{"can_manage_inventory": true, "can_view_finance": false, "can_manage_shifts": false, "can_manage_staff": false}',
+  4.88,
+  NOW()
+),
+-- Head Chef Account
+(
+  'b0000000-0000-0000-0000-000000000004',
+  '00000000-0000-0000-0000-000000000001',
+  'Chef Kassahun Lemma',
+  'ETH-FAYDA-51920384',
+  '+251955667788',
+  'chef@tibebrms.com',
+  'Lemma Assefa (Father)',
+  '+251955001122',
+  'Piazza, Kebele 12, Addis Ababa',
+  '1988-11-23',
+  '2024-01-10',
+  'active',
+  'cook',
+  'Chef@2026',
+  22000.00,
+  '{"can_manage_inventory": true, "can_view_finance": false, "can_manage_shifts": false, "can_manage_staff": false}',
+  4.96,
+  NOW()
+),
+-- Lead Waiter Account (Michael Tadesse)
+(
   'b0000000-0000-0000-0000-000000000005',
   '00000000-0000-0000-0000-000000000001',
   'Michael Tadesse',
@@ -85,46 +130,60 @@ VALUES (
   'waiter@tibebrms.com',
   'Tadesse Wondimu (Father)',
   '+251933998877',
-  'Megenaña, Addis Ababa',
+  'Megenaña, Kebele 08, Addis Ababa',
   '1996-03-18',
+  '2024-02-01',
   'active',
   'waiter',
-  '123456',
+  'Waiter@2026',
   9500.00,
-  '{"can_manage_inventory":false,"can_view_finance":false,"can_manage_shifts":false,"can_manage_staff":false}',
-  4.92
+  '{"can_manage_inventory": false, "can_view_finance": false, "can_manage_shifts": false, "can_manage_staff": false}',
+  4.92,
+  NOW()
 )
-ON CONFLICT (id) DO UPDATE 
-SET email = EXCLUDED.email;
+ON CONFLICT (id) DO UPDATE SET
+  full_name = EXCLUDED.full_name,
+  email = EXCLUDED.email,
+  pin_code_hash = EXCLUDED.pin_code_hash,
+  role = EXCLUDED.role,
+  permissions = EXCLUDED.permissions;
 
--- 3. Seed Core Ingredients (for Inventory & Dynamic Pricing)
-INSERT INTO ingredients (id, restaurant_id, name, unit, stock_qty, low_stock_threshold, cost_per_unit)
+-- 3. Seed Dining Sections (Dynamic Zones)
+INSERT INTO public.dining_sections (id, restaurant_id, name, description, display_order, created_at)
 VALUES
-  ('c0000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-000000000001', 'Prime Beef Tenderloin', 'gram', 3200.0, 8000.0, 0.4800),
-  ('c0000000-0000-0000-0000-000000000002', '00000000-0000-0000-0000-000000000001', 'Wild Highland Honey', 'ml', 1800.0, 5000.0, 0.3500),
-  ('c0000000-0000-0000-0000-000000000003', '00000000-0000-0000-0000-000000000001', 'Aged Berbere Spice Blend', 'gram', 1100.0, 3000.0, 0.2900),
-  ('c0000000-0000-0000-0000-000000000004', '00000000-0000-0000-0000-000000000001', 'Fresh Niter Kibbeh', 'gram', 2400.0, 6000.0, 0.5200),
-  ('c0000000-0000-0000-0000-000000000005', '00000000-0000-0000-0000-000000000001', 'Yirgacheffe Specialty Coffee Beans', 'gram', 4500.0, 10000.0, 0.1800)
-ON CONFLICT (id) DO UPDATE 
-SET name = EXCLUDED.name, cost_per_unit = EXCLUDED.cost_per_unit;
+  ('d0000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-000000000001', 'Main Dining Hall', 'Primary indoor dining hall', 1, NOW()),
+  ('d0000000-0000-0000-0000-000000000002', '00000000-0000-0000-0000-000000000001', 'Terrace Garden', 'Outdoor garden dining patio', 2, NOW()),
+  ('d0000000-0000-0000-0000-000000000003', '00000000-0000-0000-0000-000000000001', 'Lounge & Bar', 'Highland coffee & cocktail lounge', 3, NOW()),
+  ('d0000000-0000-0000-0000-000000000004', '00000000-0000-0000-0000-000000000001', 'VIP Alcove', 'Exclusive private dining rooms', 4, NOW())
+ON CONFLICT (name) DO UPDATE SET
+  description = EXCLUDED.description,
+  display_order = EXCLUDED.display_order;
 
--- 4. Seed Signature Menu Items
-INSERT INTO menu_items (id, restaurant_id, name, description, price, category, photo_url, is_available, preparation_time_minutes)
+-- 4. Seed Initial 20 Dining Tables for Keren Addis
+INSERT INTO public.tables (id, restaurant_id, table_number, unique_code, section_name, capacity, status, created_at)
 VALUES
-  ('d0000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-000000000001', 'Special Sizzling Awaze Tibs', 'Sautéed prime beef tenderloin cubes infused with rosemary, garlic, and aged berbere kibbeh served on a flaming clay skillet.', 680.00, 'main', 'https://images.unsplash.com/photo-1544025162-d76694265947?w=600&auto=format&fit=crop&q=80', true, 18),
-  ('d0000000-0000-0000-0000-000000000002', '00000000-0000-0000-0000-000000000001', 'Gourmet Kereyu Kitfo Royale', 'Finely minced beef tenderloin seasoned with mitmita and warm niter kibbeh, served with ayib and gomen.', 640.00, 'main', 'https://images.unsplash.com/photo-1555939594-58d7cb561ad1?w=600&auto=format&fit=crop&q=80', true, 15),
-  ('d0000000-0000-0000-0000-000000000003', '00000000-0000-0000-0000-000000000001', 'Claypot Sizzling Shiro Misto', 'Slow-simmered chickpea flour stew enriched with clarified butter, garlic, and green chilies.', 380.00, 'main', 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=600&auto=format&fit=crop&q=80', true, 12),
-  ('d0000000-0000-0000-0000-000000000004', '00000000-0000-0000-0000-000000000001', 'Single-Origin Yirgacheffe Coffee', 'Artisanal pan-roasted coffee served with traditional frankincense ceremony.', 120.00, 'drink', 'https://images.unsplash.com/photo-1514432324607-a09d9b4aefdd?w=600&auto=format&fit=crop&q=80', true, 10),
-  ('d0000000-0000-0000-0000-000000000005', '00000000-0000-0000-0000-000000000001', 'Keren Sheba Honey Tej Decanter', 'Traditional barrel-aged honey wine infused with gesho root.', 450.00, 'drink', 'https://images.unsplash.com/photo-1510812431401-41d2bd2722f3?w=600&auto=format&fit=crop&q=80', true, 5)
-ON CONFLICT (id) DO UPDATE 
-SET name = EXCLUDED.name, price = EXCLUDED.price;
-
--- 5. Seed Recipes (Bill of Materials)
-INSERT INTO recipes (menu_item_id, ingredient_id, quantity_required)
-VALUES
-  ('d0000000-0000-0000-0000-000000000001', 'c0000000-0000-0000-0000-000000000001', 350.0), -- 350g Beef
-  ('d0000000-0000-0000-0000-000000000001', 'c0000000-0000-0000-0000-000000000003', 30.0),  -- 30g Berbere
-  ('d0000000-0000-0000-0000-000000000001', 'c0000000-0000-0000-0000-000000000004', 50.0),  -- 50g Kibbeh
-  ('d0000000-0000-0000-0000-000000000004', 'c0000000-0000-0000-0000-000000000005', 40.0),  -- 40g Coffee Beans
-  ('d0000000-0000-0000-0000-000000000005', 'c0000000-0000-0000-0000-000000000002', 200.0) -- 200ml Honey
-ON CONFLICT (menu_item_id, ingredient_id) DO NOTHING;
+  ('c0000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-000000000001', 1, 'T-01', 'Terrace Garden', 2, 'free', NOW()),
+  ('c0000000-0000-0000-0000-000000000002', '00000000-0000-0000-0000-000000000001', 2, 'T-02', 'Terrace Garden', 2, 'free', NOW()),
+  ('c0000000-0000-0000-0000-000000000003', '00000000-0000-0000-0000-000000000003', 3, 'T-03', 'Terrace Garden', 4, 'free', NOW()),
+  ('c0000000-0000-0000-0000-000000000004', '00000000-0000-0000-0000-000000000001', 4, 'T-04', 'Terrace Garden', 4, 'free', NOW()),
+  ('c0000000-0000-0000-0000-000000000005', '00000000-0000-0000-0000-000000000001', 5, 'T-05', 'Main Dining Hall', 4, 'occupied', NOW()),
+  ('c0000000-0000-0000-0000-000000000006', '00000000-0000-0000-0000-000000000001', 6, 'T-06', 'Main Dining Hall', 6, 'free', NOW()),
+  ('c0000000-0000-0000-0000-000000000007', '00000000-0000-0000-0000-000000000001', 7, 'T-07', 'Main Dining Hall', 4, 'reserved', NOW()),
+  ('c0000000-0000-0000-0000-000000000008', '00000000-0000-0000-0000-000000000001', 8, 'T-08', 'Main Dining Hall', 8, 'free', NOW()),
+  ('c0000000-0000-0000-0000-000000000009', '00000000-0000-0000-0000-000000000001', 9, 'T-09', 'Main Dining Hall', 4, 'free', NOW()),
+  ('c0000000-0000-0000-0000-000000000010', '00000000-0000-0000-0000-000000000001', 10, 'T-10', 'Main Dining Hall', 4, 'free', NOW()),
+  ('c0000000-0000-0000-0000-000000000011', '00000000-0000-0000-0000-000000000001', 11, 'T-11', 'Main Dining Hall', 2, 'free', NOW()),
+  ('c0000000-0000-0000-0000-000000000012', '00000000-0000-0000-0000-000000000001', 12, 'T-12', 'Main Dining Hall', 4, 'free', NOW()),
+  ('c0000000-0000-0000-0000-000000000013', '00000000-0000-0000-0000-000000000001', 13, 'T-13', 'Main Dining Hall', 6, 'free', NOW()),
+  ('c0000000-0000-0000-0000-000000000014', '00000000-0000-0000-0000-000000000001', 14, 'T-14', 'Main Dining Hall', 4, 'free', NOW()),
+  ('c0000000-0000-0000-0000-000000000015', '00000000-0000-0000-0000-000000000001', 15, 'T-15', 'Main Dining Hall', 4, 'free', NOW()),
+  ('c0000000-0000-0000-0000-000000000016', '00000000-0000-0000-0000-000000000001', 16, 'T-16', 'Main Dining Hall', 2, 'free', NOW()),
+  ('c0000000-0000-0000-0000-000000000017', '00000000-0000-0000-0000-000000000001', 17, 'T-17', 'Lounge & Bar', 4, 'free', NOW()),
+  ('c0000000-0000-0000-0000-000000000018', '00000000-0000-0000-0000-000000000001', 18, 'T-18', 'Lounge & Bar', 4, 'free', NOW()),
+  ('c0000000-0000-0000-0000-000000000019', '00000000-0000-0000-0000-000000000001', 19, 'T-19', 'Lounge & Bar', 6, 'free', NOW()),
+  ('c0000000-0000-0000-0000-000000000020', '00000000-0000-0000-0000-000000000001', 20, 'T-20', 'VIP Alcove', 10, 'free', NOW())
+ON CONFLICT (unique_code) DO UPDATE SET
+  table_number = EXCLUDED.table_number,
+  capacity = EXCLUDED.capacity,
+  section_name = EXCLUDED.section_name,
+  status = EXCLUDED.status;

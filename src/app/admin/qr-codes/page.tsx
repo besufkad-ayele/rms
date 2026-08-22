@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { QrCode, Printer, ExternalLink, RefreshCw, UtensilsCrossed, Sparkles } from "lucide-react";
+import { QrCode, Printer, ExternalLink } from "lucide-react";
 import Link from "next/link";
 import { getTablesData, getDiningSectionsAction, DiningSection } from "../tables/actions";
 import { TableFloorState } from "@/data/mockDashboard";

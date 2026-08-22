@@ -92,17 +92,24 @@ export async function updateStaffPermissions(
   staffId: string,
   role: StaffRole,
   permissions: Staff["permissions"],
-  status: EmploymentStatus
+  status: EmploymentStatus,
+  newPinCode?: string
 ) {
   try {
     const supabase = await getSupabase();
+    const updatePayload: any = { role, permissions, employment_status: status };
+    if (newPinCode && newPinCode.trim()) {
+      updatePayload.pin_code_hash = newPinCode.trim();
+    }
+
     const { error } = await supabase
       .from("staff")
-      .update({ role, permissions, employment_status: status })
+      .update(updatePayload)
       .eq("id", staffId);
 
     if (!error) {
       revalidatePath("/admin/staff");
+      revalidatePath("/staff-login");
       return { success: true };
     }
   } catch (err) {
@@ -110,5 +117,168 @@ export async function updateStaffPermissions(
   }
 
   revalidatePath("/admin/staff");
+  revalidatePath("/staff-login");
   return { success: true };
+}
+
+// =====================================================================
+// ATTENDANCE, LEAVE & TRAINING ACTIONS
+// =====================================================================
+
+export async function getAttendanceLogsAction() {
+  try {
+    const supabase = await getSupabase();
+    const { data, error } = await supabase
+      .from("clock_in_logs")
+      .select(`
+        id,
+        clock_in_time,
+        clock_out_time,
+        status,
+        created_at,
+        staff:staff_id (full_name, role)
+      `)
+      .order("created_at", { ascending: false });
+
+    if (!error && data && data.length > 0) {
+      return data.map((d: any) => ({
+        id: d.id,
+        staffName: d.staff?.full_name || "Staff Member",
+        role: d.staff?.role || "Staff",
+        clockIn: new Date(d.clock_in_time).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+        clockOut: d.clock_out_time
+          ? new Date(d.clock_out_time).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+          : "Shift Active",
+        status: d.status || "on_time",
+        date: new Date(d.created_at).toLocaleDateString(),
+      }));
+    }
+  } catch (err) {
+    console.error("Error fetching attendance logs from Supabase:", err);
+  }
+  return [];
+}
+
+export async function getLeaveRequestsAction() {
+  try {
+    const supabase = await getSupabase();
+    const { data, error } = await supabase
+      .from("leave_requests")
+      .select(`
+        id,
+        leave_type,
+        start_date,
+        end_date,
+        reason,
+        status,
+        created_at,
+        staff:staff_id (full_name)
+      `)
+      .order("created_at", { ascending: false });
+
+    if (!error && data && data.length > 0) {
+      return data.map((d: any) => ({
+        id: d.id,
+        staffName: d.staff?.full_name || "Staff Member",
+        type: d.leave_type,
+        startDate: d.start_date,
+        endDate: d.end_date,
+        reason: d.reason || "No reason provided",
+        status: d.status,
+      }));
+    }
+  } catch (err) {
+    console.error("Error fetching leave requests from Supabase:", err);
+  }
+  return [];
+}
+
+export async function updateLeaveRequestAction(id: string, newStatus: string) {
+  try {
+    const supabase = await getSupabase();
+    await supabase.from("leave_requests").update({ status: newStatus }).eq("id", id);
+    revalidatePath("/admin/staff");
+    return { success: true };
+  } catch (err) {
+    console.error("Failed to update leave request status:", err);
+    return { success: false };
+  }
+}
+
+export async function getTrainingChecklistAction() {
+  try {
+    const supabase = await getSupabase();
+    const { data, error } = await supabase
+      .from("training_checklist")
+      .select(`
+        id,
+        staff_id,
+        item_name,
+        category,
+        completed,
+        completed_at,
+        staff:staff_id (full_name, role)
+      `)
+      .order("id", { ascending: true });
+
+    if (!error && data && data.length > 0) {
+      return data.map((d: any) => ({
+        id: d.id,
+        staffId: d.staff_id,
+        staffName: d.staff?.full_name || "Staff Member",
+        staffRole: d.staff?.role || "Staff",
+        title: d.item_name,
+        category: d.category || "General",
+        completed: d.completed || false,
+        completedAt: d.completed_at,
+      }));
+    }
+  } catch (err) {
+    console.error("Error fetching training checklist from Supabase:", err);
+  }
+  return [];
+}
+
+export async function addTrainingChecklistItemAction(
+  staffId: string,
+  itemName: string,
+  category: string
+) {
+  try {
+    const supabase = await getSupabase();
+    const { data, error } = await supabase
+      .from("training_checklist")
+      .insert([
+        {
+          staff_id: staffId,
+          item_name: itemName,
+          category: category || "General",
+          completed: false,
+        },
+      ])
+      .select();
+
+    if (!error && data) {
+      revalidatePath("/admin/staff");
+      return { success: true, item: data[0] };
+    }
+  } catch (err) {
+    console.error("Failed to add training checklist item:", err);
+  }
+  return { success: false };
+}
+
+export async function toggleTrainingChecklistAction(id: string, completed: boolean) {
+  try {
+    const supabase = await getSupabase();
+    await supabase
+      .from("training_checklist")
+      .update({ completed, completed_at: completed ? new Date().toISOString() : null })
+      .eq("id", id);
+    revalidatePath("/admin/staff");
+    return { success: true };
+  } catch (err) {
+    console.error("Failed to toggle training checklist item:", err);
+    return { success: false };
+  }
 }

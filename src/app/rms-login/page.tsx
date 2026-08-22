@@ -20,34 +20,12 @@ import {
 import { cn } from "@/lib/utils";
 import { authenticateStaffAction } from "./actions";
 
-// Quick-fill credentials for testing seeded database accounts
-const SEED_ACCOUNTS_PREVIEW = [
-  {
-    roleTitle: "Restaurant Owner (Super-Admin)",
-    identifier: "owner@tibebrms.com",
-    pin: "Owner@2026",
-    faydaId: "ETH-FAYDA-98234120",
-    roleTag: "Super-Admin",
-    badgeColor: "bg-brand-accent text-white",
-    description: "Full visibility over finance, P&L, HR salaries, dynamic pricing & menu engineering.",
-  },
-  {
-    roleTitle: "Operations Manager (Admin)",
-    identifier: "manager@tibebrms.com",
-    pin: "Admin@2026",
-    faydaId: "ETH-FAYDA-48192031",
-    roleTag: "Manager",
-    badgeColor: "bg-brand-primary text-white",
-    description: "Operational management of floor plan, staff shifts, inventory & kitchen stream.",
-  },
-];
-
 export default function RMSLoginPage() {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
 
-  const [identifier, setIdentifier] = useState<string>("owner@tibebrms.com");
-  const [pin, setPin] = useState<string>("Owner@2026");
+  const [identifier, setIdentifier] = useState<string>("");
+  const [pin, setPin] = useState<string>("");
   const [showPassword, setShowPassword] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successInfo, setSuccessInfo] = useState<string | null>(null);
@@ -67,14 +45,8 @@ export default function RMSLoginPage() {
     });
   };
 
-  const handleQuickFill = (acc: typeof SEED_ACCOUNTS_PREVIEW[0]) => {
-    setIdentifier(acc.identifier);
-    setPin(acc.pin);
-    setErrorMessage(null);
-  };
-
   return (
-    <div className="min-h-screen bg-bg-subtle flex flex-col justify-between p-4 sm:p-8">
+    <div className="min-h-screen bg-bg-subtle flex flex-col justify-between p-4 sm:p-8 font-sans">
       {/* Top Header */}
       <div className="max-w-5xl w-full mx-auto flex items-center justify-between">
         <div className="flex items-center gap-3">
@@ -83,7 +55,7 @@ export default function RMSLoginPage() {
           </div>
           <div>
             <h1 className="font-header font-bold text-base text-brand-heading leading-tight">
-              Tibeb Gastronomy OS
+              Keren Addis OS
             </h1>
             <p className="text-[11px] font-medium text-brand-secondary">
               Owner &amp; Admin Enterprise Management Portal
@@ -181,52 +153,13 @@ export default function RMSLoginPage() {
               <ArrowRight className="h-4 w-4" />
             </button>
           </form>
-
-          {/* Quick-Fill Seeded Accounts Selector */}
-          <div className="pt-4 border-t border-divider space-y-2.5">
-            <p className="text-[10px] font-bold uppercase tracking-wider text-brand-secondary text-center">
-              Seeded Test Credentials (Click to Quick-Fill):
-            </p>
-            <div className="space-y-2">
-              {SEED_ACCOUNTS_PREVIEW.map((acc, idx) => (
-                <button
-                  key={idx}
-                  type="button"
-                  onClick={() => handleQuickFill(acc)}
-                  className={cn(
-                    "w-full p-2.5 rounded-button border text-left transition hover:border-brand-accent space-y-1 text-[11px]",
-                    identifier === acc.identifier
-                      ? "bg-bg-active border-brand-accent font-semibold"
-                      : "bg-bg-subtle border-divider/60"
-                  )}
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="font-bold text-brand-primary flex items-center gap-1.5">
-                      {idx === 0 ? <Crown className="h-3.5 w-3.5 text-brand-accent" /> : <Briefcase className="h-3.5 w-3.5 text-brand-primary" />}
-                      {acc.roleTitle}
-                    </span>
-                    <span className={cn("px-2 py-0.5 rounded-pill text-[9px] font-bold", acc.badgeColor)}>
-                      {acc.roleTag}
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between text-[10px] text-brand-secondary font-mono">
-                    <span>{acc.identifier}</span>
-                    <span>PIN/PW: {acc.pin}</span>
-                  </div>
-                  <p className="text-[10px] text-brand-secondary font-normal">
-                    {acc.description}
-                  </p>
-                </button>
-              ))}
-            </div>
-          </div>
         </div>
       </div>
 
       {/* Footer Info */}
       <div className="max-w-5xl w-full mx-auto text-center text-[11px] text-brand-secondary space-y-1">
         <p>
-          Tibeb Gastronomy Operating System • Row-Level Security (RLS) &amp; Financial Audit Trail
+          Keren Addis OS • Row-Level Security (RLS) &amp; Financial Audit Trail
         </p>
         <p className="text-[10px]">
           Confidential Enterprise Portal • Access restricted to owner and designated administration personnel.

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   Flame,
   Clock,
@@ -39,135 +39,10 @@ interface ChefTicket {
   customerNote?: string;
 }
 
-const INITIAL_TICKETS: ChefTicket[] = [
-  {
-    id: "ord-kds-01",
-    orderNumber: "#KD-402",
-    tableCode: "T-04",
-    channel: "dine_in",
-    status: "placed",
-    elapsedMinutes: 4,
-    attendant: "Michael Tadesse",
-    customerNote: "Extra awaze on side, mild spice for kitfo please.",
-    items: [
-      {
-        name: "Special Sizzling Awaze Tibs",
-        qty: 1,
-        station: "grill",
-        recipeBOM: [
-          { ingredient: "Prime Beef Tenderloin", amount: "280g" },
-          { ingredient: "Niter Kibbeh", amount: "40g" },
-          { ingredient: "Awaze Spice", amount: "20g" },
-          { ingredient: "Red Onions", amount: "150g" },
-        ],
-      },
-      {
-        name: "Gourmet Kitfo Royale",
-        qty: 1,
-        station: "grill",
-        notes: "Mild spice with warm spiced butter",
-        recipeBOM: [
-          { ingredient: "Minced Lean Beef", amount: "300g" },
-          { ingredient: "Niter Kibbeh", amount: "50g" },
-          { ingredient: "Korerima Cardamom", amount: "10g" },
-          { ingredient: "Fresh Ayib Cheese", amount: "80g" },
-        ],
-      },
-    ],
-  },
-  {
-    id: "ord-kds-02",
-    orderNumber: "#KD-399",
-    tableCode: "T-15",
-    channel: "dine_in",
-    status: "placed",
-    elapsedMinutes: 9,
-    attendant: "Sara Mengistu",
-    items: [
-      {
-        name: "Claypot Sizzling Shiro Misto",
-        qty: 2,
-        station: "stew",
-        recipeBOM: [
-          { ingredient: "Sun-Dried Shiro Powder", amount: "160g" },
-          { ingredient: "Beef Cubes", amount: "120g" },
-          { ingredient: "Garlic & Kibbeh", amount: "30g" },
-        ],
-      },
-      {
-        name: "Crispy Lentil & Beef Sambusa",
-        qty: 1,
-        station: "starter",
-        recipeBOM: [
-          { ingredient: "Sambusa Pastry & Lentils", amount: "3 pcs" },
-        ],
-      },
-    ],
-  },
-  {
-    id: "ord-kds-03",
-    orderNumber: "#KD-396",
-    tableCode: "T-03",
-    channel: "dine_in",
-    status: "preparing",
-    elapsedMinutes: 14,
-    attendant: "Michael Tadesse",
-    items: [
-      {
-        name: "Royal Doro Wat Feast",
-        qty: 1,
-        station: "stew",
-        recipeBOM: [
-          { ingredient: "Chicken Drumsticks", amount: "350g" },
-          { ingredient: "Aged Berbere", amount: "80g" },
-          { ingredient: "Niter Kibbeh", amount: "50g" },
-          { ingredient: "Red Onions", amount: "500g" },
-        ],
-      },
-      {
-        name: "Special Sizzling Awaze Tibs",
-        qty: 2,
-        station: "grill",
-        recipeBOM: [
-          { ingredient: "Prime Beef Tenderloin", amount: "560g" },
-          { ingredient: "Niter Kibbeh", amount: "80g" },
-          { ingredient: "Awaze Spice", amount: "40g" },
-        ],
-      },
-    ],
-  },
-  {
-    id: "ord-kds-04",
-    orderNumber: "#KD-391",
-    tableCode: "T-01",
-    channel: "dine_in",
-    status: "ready",
-    elapsedMinutes: 18,
-    attendant: "Sara Mengistu",
-    items: [
-      {
-        name: "Gourmet Kitfo Royale",
-        qty: 1,
-        station: "grill",
-        recipeBOM: [
-          { ingredient: "Minced Lean Beef", amount: "300g" },
-          { ingredient: "Niter Kibbeh", amount: "50g" },
-        ],
-      },
-      {
-        name: "Cardamom & Honey Baklava",
-        qty: 2,
-        station: "starter",
-        recipeBOM: [
-          { ingredient: "Phyllo & Pistachios", amount: "2 portions" },
-        ],
-      },
-    ],
-  },
-];
+import { getKitchenOrdersAction, updateKitchenOrderStatusAction } from "./actions";
 
 export default function ChefDashboardPage() {
-  const [tickets, setTickets] = useState<ChefTicket[]>(INITIAL_TICKETS);
+  const [tickets, setTickets] = useState<ChefTicket[]>([]);
   const [activeStation, setActiveStation] = useState<string>("all");
   const [selectedBOMItem, setSelectedBOMItem] = useState<ChefTicketItem | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -177,26 +52,37 @@ export default function ChefDashboardPage() {
     setTimeout(() => setToastMessage(null), 3000);
   };
 
-  const advanceTicketStatus = (ticketId: string) => {
-    setTickets(
-      tickets.map((t) => {
-        if (t.id === ticketId) {
-          if (t.status === "placed") {
-            showToast(`Ticket ${t.orderNumber} is now PREPARING on hearth/stoves!`);
-            return { ...t, status: "preparing" };
-          }
-          if (t.status === "preparing") {
-            showToast(`Ticket ${t.orderNumber} marked READY for server pickup!`);
-            return { ...t, status: "ready" };
-          }
-          if (t.status === "ready") {
-            showToast(`Ticket ${t.orderNumber} handed off and served!`);
-            return null as any;
-          }
-        }
-        return t;
-      }).filter(Boolean)
+  const fetchLiveTickets = async () => {
+    const res = await getKitchenOrdersAction();
+    if (res.tickets && res.tickets.length > 0) {
+      setTickets(res.tickets as any);
+    }
+  };
+
+  useEffect(() => {
+    fetchLiveTickets();
+    const interval = setInterval(fetchLiveTickets, 5000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const advanceTicketStatus = async (ticketId: string) => {
+    const target = tickets.find((t) => t.id === ticketId);
+    if (!target) return;
+
+    let nextStatus: "placed" | "preparing" | "ready" | "served" = "preparing";
+    if (target.status === "placed") nextStatus = "preparing";
+    else if (target.status === "preparing") nextStatus = "ready";
+    else if (target.status === "ready") nextStatus = "served";
+
+    await updateKitchenOrderStatusAction(ticketId, nextStatus);
+
+    setTickets((prev) =>
+      prev
+        .map((t) => (t.id === ticketId ? { ...t, status: nextStatus as any } : t))
+        .filter((t) => t.status !== "served")
     );
+
+    showToast(`Order ${target.orderNumber} updated to ${nextStatus.toUpperCase()}!`);
   };
 
   const filteredTickets = tickets.filter((t) => {

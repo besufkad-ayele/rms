@@ -27,7 +27,7 @@ export default function ChefLayout({
 
   const handleLogout = async () => {
     await logoutUserAction();
-    router.push("/rms-login");
+    router.push("/staff-login");
   };
 
   return (

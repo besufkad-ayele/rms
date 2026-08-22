@@ -19,16 +19,20 @@ import {
   UserCheck,
   Shield,
   RefreshCw,
+  QrCode,
+  BookOpen,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import AccessDeniedBanner from "@/components/ui/AccessDeniedBanner";
 
 const ALL_NAVIGATION_ITEMS = [
   { name: "Live Dashboard", href: "/admin/dashboard", icon: LayoutDashboard, requiredPermission: "all" },
-  { name: "Staff & HR (Phase 1)", href: "/admin/staff", icon: Users, badge: "Phase 1", requiredPermission: "can_manage_staff" },
+  { name: "Staff & Human Resources", href: "/admin/staff", icon: Users, requiredPermission: "can_manage_staff" },
   { name: "Shifts & Roster", href: "/admin/shifts", icon: CalendarDays, requiredPermission: "can_manage_shifts" },
   { name: "Inventory & BOM", href: "/admin/inventory", icon: Package, requiredPermission: "can_manage_inventory" },
+  { name: "Menu Management", href: "/admin/menu", icon: BookOpen, requiredPermission: "all" },
   { name: "Floor & Tables", href: "/admin/tables", icon: UtensilsCrossed, requiredPermission: "all" },
+  { name: "QR Code Generator", href: "/admin/qr-codes", icon: QrCode, requiredPermission: "all" },
   { name: "Orders & KDS", href: "/admin/orders", icon: ShoppingBag, requiredPermission: "all" },
   { name: "Finance & P&L", href: "/admin/finance", icon: CircleDollarSign, requiredPermission: "can_view_finance" },
   { name: "Reviews & Ratings", href: "/admin/reviews", icon: Star, requiredPermission: "all" },
@@ -59,25 +63,14 @@ export default function AdminLayout({
         const parsed = JSON.parse(jsonStr);
         setSessionUser(parsed);
       } else {
-        // Default Super Admin session fallback if not set
-        setSessionUser({
-          fullName: "Abebe Kebede",
-          role: "admin",
-          permissions: {
-            can_manage_inventory: true,
-            can_view_finance: true,
-            can_manage_shifts: true,
-            can_manage_staff: true,
-          },
-        });
+        setSessionUser(null);
+        router.push("/rms-login");
       }
     } catch (e) {
-      setSessionUser({
-        fullName: "Abebe Kebede",
-        role: "admin",
-      });
+      setSessionUser(null);
+      router.push("/rms-login");
     }
-  }, []);
+  }, [pathname, router]);
 
   const isSuperAdmin = sessionUser?.role === "admin";
   const userPermissions = sessionUser?.permissions || {};
@@ -120,7 +113,7 @@ export default function AdminLayout({
               </div>
               <div>
                 <h1 className="font-display font-bold text-base text-brand-primary leading-tight">
-                  Admas Lounge
+                  Keren Addis
                 </h1>
                 <p className="text-[11px] font-medium text-brand-secondary">
                   Management OS
@@ -157,11 +150,6 @@ export default function AdminLayout({
                     />
                     <span>{item.name}</span>
                   </div>
-                  {item.badge && (
-                    <span className="rounded-pill bg-brand-accent/10 px-2 py-0.5 text-[10px] font-bold text-brand-accent">
-                      {item.badge}
-                    </span>
-                  )}
                 </Link>
               );
             })}
@@ -188,9 +176,9 @@ export default function AdminLayout({
             <button
               onClick={async () => {
                 await logoutUserAction();
-                router.push("/staff-login");
+                router.push("/rms-login");
               }}
-              title="Switch Staff Account or Logout"
+              title="Sign Out to Owner / Admin Login Portal"
               className="flex items-center gap-1 text-brand-secondary hover:text-status-danger p-1.5 rounded-button hover:bg-status-danger-bg/50 transition cursor-pointer"
             >
               <LogOut className="h-4 w-4" />
@@ -198,11 +186,11 @@ export default function AdminLayout({
           </div>
 
           <Link
-            href="/staff-login"
+            href="/rms-login"
             className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded-button bg-bg-subtle hover:bg-bg-card text-[11px] font-bold text-brand-primary border border-divider transition"
           >
             <UserCheck className="h-3.5 w-3.5 text-brand-accent" />
-            <span>Switch Staff Profile</span>
+            <span>Admin Sign-In Portal</span>
           </Link>
         </div>
       </aside>
@@ -231,9 +219,9 @@ export default function AdminLayout({
             <button
               onClick={async () => {
                 await logoutUserAction();
-                router.push("/staff-login");
+                router.push("/rms-login");
               }}
-              title="Sign Out to Staff Login Portal"
+              title="Sign Out to Admin Login Portal"
               className="flex items-center gap-1.5 rounded-button bg-bg-card px-3.5 py-1.5 text-xs font-semibold text-brand-primary border border-divider hover:bg-status-danger-bg hover:text-status-danger hover:border-status-danger/30 transition shadow-xs cursor-pointer"
             >
               <LogOut className="h-3.5 w-3.5" />

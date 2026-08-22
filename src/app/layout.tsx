@@ -16,9 +16,11 @@ const lato = Lato({
   display: "swap",
 });
 
+import { LanguageProvider } from "@/context/LanguageContext";
+
 export const metadata: Metadata = {
-  title: "RMS - Restaurant Management System",
-  description: "End-to-end real-time operating system for modern restaurants",
+  title: "Keren Addis - Restaurant Management System & Fine Dining",
+  description: "End-to-end real-time operating system & digital dining experience for Keren Addis",
 };
 
 export default function RootLayout({
@@ -28,8 +30,10 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className={`${montserrat.variable} ${lato.variable}`}>
-      <body className="min-h-screen bg-white text-brand-primary font-sans antialiased">
-        {children}
+      <body className="min-h-screen bg-white text-brand-primary font-nyala antialiased">
+        <LanguageProvider>
+          {children}
+        </LanguageProvider>
       </body>
     </html>
   );
