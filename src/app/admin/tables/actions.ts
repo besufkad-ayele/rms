@@ -22,12 +22,58 @@ function getSectionForTableNumber(tableNum: number): string {
   return "VIP Alcove";
 }
 
+export interface AvailableStaff {
+  id: string;
+  fullName: string;
+  role: string;
+  phone?: string;
+}
+
+export async function getAvailableWaitersAction(): Promise<AvailableStaff[]> {
+  try {
+    const supabase = await getSupabase();
+    const { data, error } = await supabase
+      .from("staff")
+      .select("id, full_name, role, phone_number")
+      .eq("role", "waiter")
+      .eq("employment_status", "active")
+      .order("full_name", { ascending: true });
+
+    if (error) {
+      console.error("Error fetching available staff from Supabase:", error.message);
+      return [];
+    }
+
+    if (data) {
+      return data.map((s: any) => ({
+        id: s.id,
+        fullName: s.full_name,
+        role: s.role,
+        phone: s.phone_number,
+      }));
+    }
+  } catch (err) {
+    console.error("Exception fetching available staff:", err);
+  }
+  return [];
+}
+
 export async function getTablesData() {
   try {
     const supabase = await getSupabase();
     const { data: dbTables, error } = await supabase
       .from("tables")
-      .select("id, table_number, unique_code, capacity, status, section_name, assigned_staff_id, current_order_id")
+      .select(`
+        id,
+        table_number,
+        unique_code,
+        capacity,
+        status,
+        section_name,
+        assigned_staff_id,
+        current_order_id,
+        staff:assigned_staff_id (id, full_name, role)
+      `)
       .order("table_number", { ascending: true });
 
     if (error) {
@@ -35,16 +81,21 @@ export async function getTablesData() {
     }
 
     if (dbTables && dbTables.length > 0) {
-      const tables: TableFloorState[] = dbTables.map((t: any) => ({
-        id: t.id,
-        table_number: t.table_number,
-        unique_code: t.unique_code,
-        capacity: t.capacity || 4,
-        section: (t.section_name as any) || getSectionForTableNumber(t.table_number),
-        status: t.status as "free" | "occupied" | "reserved",
-        assigned_staff_id: t.assigned_staff_id || undefined,
-        current_order_id: t.current_order_id || undefined,
-      }));
+      const tables: TableFloorState[] = dbTables.map((t: any) => {
+        const staffObj = Array.isArray(t.staff) ? t.staff[0] : t.staff;
+        return {
+          id: t.id,
+          table_number: t.table_number,
+          unique_code: t.unique_code,
+          capacity: t.capacity || 4,
+          section: (t.section_name as any) || getSectionForTableNumber(t.table_number),
+          status: t.status as "free" | "occupied" | "reserved",
+          assigned_staff_id: t.assigned_staff_id || undefined,
+          assigned_staff_name: staffObj?.full_name || undefined,
+          assigned_staff_role: staffObj?.role || undefined,
+          current_order_id: t.current_order_id || undefined,
+        };
+      });
       return { tables };
     }
   } catch (err) {
@@ -59,7 +110,7 @@ export async function updateTableDetailsAction(
   data: {
     capacity: number;
     section: string;
-    assignedStaffName: string;
+    assignedStaffId?: string | null;
     status: "free" | "occupied" | "reserved";
   }
 ) {
@@ -69,6 +120,7 @@ export async function updateTableDetailsAction(
       capacity: data.capacity,
       section_name: data.section,
       status: data.status,
+      assigned_staff_id: data.assignedStaffId || null,
     };
     if (data.status === "free") {
       updatePayload.current_order_id = null;
@@ -84,6 +136,7 @@ export async function updateTableDetailsAction(
   revalidatePath("/admin/tables");
   revalidatePath("/admin/dashboard");
   revalidatePath("/admin/qr-codes");
+  revalidatePath("/staff/dashboard");
   const result = await getTablesData();
   return { success: true, tables: result.tables };
 }
@@ -92,7 +145,7 @@ export async function createNewTableAction(data: {
   tableNumber: number;
   capacity: number;
   section: string;
-  assignedStaffName: string;
+  assignedStaffId?: string | null;
 }) {
   const code = `T-${data.tableNumber.toString().padStart(2, "0")}`;
 
@@ -105,6 +158,7 @@ export async function createNewTableAction(data: {
         capacity: data.capacity,
         unique_code: code,
         section_name: data.section,
+        assigned_staff_id: data.assignedStaffId || null,
         status: "free",
       },
     ]);
@@ -122,6 +176,7 @@ export async function createNewTableAction(data: {
   revalidatePath("/admin/tables");
   revalidatePath("/admin/dashboard");
   revalidatePath("/admin/qr-codes");
+  revalidatePath("/staff/dashboard");
   const result = await getTablesData();
   return { success: true, tables: result.tables };
 }

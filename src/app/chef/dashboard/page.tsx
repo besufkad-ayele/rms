@@ -54,14 +54,14 @@ export default function ChefDashboardPage() {
 
   const fetchLiveTickets = async () => {
     const res = await getKitchenOrdersAction();
-    if (res.tickets && res.tickets.length > 0) {
+    if (res.tickets) {
       setTickets(res.tickets as any);
     }
   };
 
   useEffect(() => {
     fetchLiveTickets();
-    const interval = setInterval(fetchLiveTickets, 5000);
+    const interval = setInterval(fetchLiveTickets, 3000);
     return () => clearInterval(interval);
   }, []);
 

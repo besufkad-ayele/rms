@@ -30,7 +30,9 @@ import {
   createDiningSectionAction,
   updateDiningSectionAction,
   deleteDiningSectionAction,
+  getAvailableWaitersAction,
   DiningSection,
+  AvailableStaff,
 } from "./actions";
 import { TableFloorState } from "@/data/mockDashboard";
 
@@ -39,6 +41,7 @@ export default function FloorTablesPage() {
 
   const [tables, setTables] = useState<TableFloorState[]>([]);
   const [diningSections, setDiningSections] = useState<DiningSection[]>([]);
+  const [availableWaiters, setAvailableWaiters] = useState<AvailableStaff[]>([]);
   const [sectionFilter, setSectionFilter] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState<string>("");
 
@@ -58,14 +61,14 @@ export default function FloorTablesPage() {
   // Table Edit Form State
   const [editCapacity, setEditCapacity] = useState<number>(4);
   const [editSection, setEditSection] = useState<string>("Main Dining Hall");
-  const [editAttendant, setEditAttendant] = useState<string>("Michael Tadesse");
+  const [editAttendantId, setEditAttendantId] = useState<string>("");
   const [editStatus, setEditStatus] = useState<"free" | "occupied" | "reserved">("free");
 
   // New Table Form State
-  const [newTableNum, setNewTableNum] = useState<number>(26);
+  const [newTableNum, setNewTableNum] = useState<number>(17);
   const [newCapacity, setNewCapacity] = useState<number>(4);
   const [newSection, setNewSection] = useState<string>("Main Dining Hall");
-  const [newAttendant, setNewAttendant] = useState<string>("Michael Tadesse");
+  const [newAttendantId, setNewAttendantId] = useState<string>("");
 
   // Toast
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -76,12 +79,14 @@ export default function FloorTablesPage() {
   };
 
   const loadData = async () => {
-    const [tablesRes, sectionsRes] = await Promise.all([
+    const [tablesRes, sectionsRes, staffRes] = await Promise.all([
       getTablesData(),
       getDiningSectionsAction(),
+      getAvailableWaitersAction(),
     ]);
     setTables(tablesRes.tables);
     setDiningSections(sectionsRes);
+    setAvailableWaiters(staffRes);
   };
 
   useEffect(() => {
@@ -111,7 +116,7 @@ export default function FloorTablesPage() {
       const res = await updateTableDetailsAction(editingTable.id, {
         capacity: editCapacity,
         section: editSection,
-        assignedStaffName: editAttendant,
+        assignedStaffId: editAttendantId || null,
         status: editStatus,
       });
 
@@ -130,14 +135,14 @@ export default function FloorTablesPage() {
         tableNumber: newTableNum,
         capacity: newCapacity,
         section: newSection,
-        assignedStaffName: newAttendant,
+        assignedStaffId: newAttendantId || null,
       });
 
       if (res.success) {
         setTables(res.tables);
         setShowAddModal(false);
         setNewTableNum((prev) => prev + 1);
-        showToast("New dining table registered!");
+        showToast("New dining table registered with assigned attendant!");
       }
     });
   };
@@ -417,8 +422,8 @@ export default function FloorTablesPage() {
                   </div>
                   <div className="flex justify-between text-[11px]">
                     <span className="text-brand-secondary">Attendant:</span>
-                    <span className="font-bold text-brand-primary truncate max-w-[90px]">
-                      {table.assigned_staff_name?.split(" ")[0]}
+                    <span className="font-bold text-brand-primary truncate max-w-[120px]" title={table.assigned_staff_name || "Unassigned"}>
+                      {table.assigned_staff_name || "Unassigned"}
                     </span>
                   </div>
                 </div>
@@ -438,7 +443,7 @@ export default function FloorTablesPage() {
                       setEditingTable(table);
                       setEditCapacity(table.capacity);
                       setEditSection(table.section);
-                      setEditAttendant(table.assigned_staff_name || "Michael Tadesse");
+                      setEditAttendantId(table.assigned_staff_id || "");
                       setEditStatus(table.status);
                     }}
                     className="rounded-button p-1 text-brand-secondary hover:text-brand-primary hover:bg-bg-subtle"
@@ -701,14 +706,16 @@ export default function FloorTablesPage() {
                   Default Assigned Attendant:
                 </label>
                 <select
-                  value={editAttendant}
-                  onChange={(e) => setEditAttendant(e.target.value)}
+                  value={editAttendantId}
+                  onChange={(e) => setEditAttendantId(e.target.value)}
                   className="w-full rounded-button border border-divider bg-bg-subtle p-2 text-xs text-brand-primary font-semibold"
                 >
-                  <option value="Michael Tadesse">Michael Tadesse (Lead Waiter)</option>
-                  <option value="Sara Mengistu">Sara Mengistu (Terrace Waiter)</option>
-                  <option value="Eden Haile">Eden Haile (Lounge Waiter)</option>
-                  <option value="Dawit Bekele">Dawit Bekele (VIP Host)</option>
+                  <option value="">-- Unassigned (Open Station) --</option>
+                  {availableWaiters.map((staff) => (
+                    <option key={staff.id} value={staff.id}>
+                      {staff.fullName} ({staff.role.toUpperCase()})
+                    </option>
+                  ))}
                 </select>
               </div>
 
@@ -814,14 +821,16 @@ export default function FloorTablesPage() {
                   Default Assigned Attendant:
                 </label>
                 <select
-                  value={newAttendant}
-                  onChange={(e) => setNewAttendant(e.target.value)}
+                  value={newAttendantId}
+                  onChange={(e) => setNewAttendantId(e.target.value)}
                   className="w-full rounded-button border border-divider bg-bg-subtle p-2 text-xs text-brand-primary font-semibold"
                 >
-                  <option value="Michael Tadesse">Michael Tadesse (Lead Waiter)</option>
-                  <option value="Sara Mengistu">Sara Mengistu (Terrace Waiter)</option>
-                  <option value="Eden Haile">Eden Haile (Lounge Waiter)</option>
-                  <option value="Dawit Bekele">Dawit Bekele (VIP Host)</option>
+                  <option value="">-- Unassigned (Open Station) --</option>
+                  {availableWaiters.map((staff) => (
+                    <option key={staff.id} value={staff.id}>
+                      {staff.fullName} ({staff.role.toUpperCase()})
+                    </option>
+                  ))}
                 </select>
               </div>
 

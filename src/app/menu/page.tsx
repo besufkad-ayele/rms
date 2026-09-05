@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import Link from "next/link";
 import {
   Search,
@@ -15,6 +15,9 @@ import {
   X,
 } from "lucide-react";
 import { MENU_ITEMS, MENU_CATEGORIES, MOCK_TABLES, MenuItemData, RESTAURANT_INFO } from "@/data/mockMenu";
+import { getMenuItemsAction } from "@/app/admin/menu/actions";
+import { getTablesData } from "@/app/admin/tables/actions";
+import { adaptDBMenuItemToData } from "@/lib/menuAdapter";
 import { CategoryTabs } from "@/components/menu/CategoryTabs";
 import { DishCard } from "@/components/menu/DishCard";
 import { DishDetailModal } from "@/components/menu/DishDetailModal";
@@ -27,6 +30,10 @@ export default function BrowsableMenuPage() {
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [selectedDish, setSelectedDish] = useState<MenuItemData | null>(null);
   const [showTableSelectModal, setShowTableSelectModal] = useState(false);
+  const [dishes, setDishes] = useState<MenuItemData[]>(MENU_ITEMS);
+  const [tablesList, setTablesList] = useState<{ code: string; displayNumber: number; capacity: number; section: string; serverName?: string }[]>(
+    Object.values(MOCK_TABLES)
+  );
 
   // Dietary filters
   const [filterSpicy, setFilterSpicy] = useState(false);
@@ -34,8 +41,36 @@ export default function BrowsableMenuPage() {
   const [filterGlutenFree, setFilterGlutenFree] = useState(false);
   const [filterChefSpecial, setFilterChefSpecial] = useState(false);
 
+  useEffect(() => {
+    async function loadData() {
+      try {
+        const [liveItems, liveTables] = await Promise.all([
+          getMenuItemsAction(),
+          getTablesData(),
+        ]);
+        if (liveItems && liveItems.length > 0) {
+          setDishes(liveItems.map(adaptDBMenuItemToData));
+        }
+        if (liveTables?.tables && liveTables.tables.length > 0) {
+          setTablesList(
+            liveTables.tables.map((t) => ({
+              code: t.unique_code,
+              displayNumber: t.table_number,
+              capacity: t.capacity,
+              section: t.section,
+              serverName: t.assigned_staff_name || "Floor Attendant",
+            }))
+          );
+        }
+      } catch (err) {
+        console.error("Error loading menu or tables:", err);
+      }
+    }
+    loadData();
+  }, []);
+
   const filteredDishes = useMemo(() => {
-    return MENU_ITEMS.filter((item) => {
+    return dishes.filter((item) => {
       // Category match
       if (selectedCategory !== "all" && item.category !== selectedCategory) {
         return false;
@@ -261,24 +296,29 @@ export default function BrowsableMenuPage() {
               </button>
             </div>
 
-            <div className="grid grid-cols-2 gap-2.5 max-h-60 overflow-y-auto pr-1">
-              {Object.values(MOCK_TABLES).map((table) => (
+            <div className="grid grid-cols-2 gap-2.5 max-h-64 overflow-y-auto pr-1">
+              {tablesList.map((table) => (
                 <Link
                   key={table.code}
                   href={`/order/${table.code}`}
-                  className="p-3 rounded-button border border-divider hover:border-brand-accent hover:bg-background-active text-left transition space-y-1 group"
+                  className="p-3 rounded-button border border-divider hover:border-brand-accent hover:bg-background-active text-left transition space-y-1.5 group"
                 >
                   <div className="flex items-center justify-between">
                     <span className="font-header font-bold text-sm text-brand-primary group-hover:text-brand-accent">
                       Table {table.displayNumber.toString().padStart(2, "0")}
                     </span>
-                    <span className="text-[10px] text-brand-secondary">
+                    <span className="text-[10px] text-brand-secondary bg-background-subtle px-1.5 py-0.5 rounded">
                       {table.capacity} seats
                     </span>
                   </div>
                   <p className="text-[11px] text-brand-secondary truncate">
                     {table.section}
                   </p>
+                  {table.serverName && (
+                    <p className="text-[10px] text-brand-accent font-medium truncate">
+                      Waiter: {table.serverName}
+                    </p>
+                  )}
                 </Link>
               ))}
             </div>

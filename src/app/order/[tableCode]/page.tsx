@@ -28,7 +28,7 @@ import { DishCard } from "@/components/menu/DishCard";
 import { DishDetailModal } from "@/components/menu/DishDetailModal";
 import { CartDrawer, CartItem } from "@/components/order/CartDrawer";
 import { OrderStatusStepper, FlowOrderStatus } from "@/components/order/OrderStatusStepper";
-import { submitOrderAction, submitPaymentAction, submitFeedbackAction, getOrderStatusAction } from "./actions";
+import { submitOrderAction, submitPaymentAction, submitFeedbackAction, getOrderStatusAction, getTableByCodeAction } from "./actions";
 import { getMenuItemsAction } from "@/app/admin/menu/actions";
 import { PaymentMethodCard, PaymentMethod } from "@/components/order/PaymentMethodCard";
 import { RatingStep } from "@/components/order/RatingStep";
@@ -43,7 +43,27 @@ interface PageProps {
 function OrderFlowContent({ tableCode }: { tableCode: string }) {
   const { toast } = useToast();
   const { enqueueAndSyncIfOnline, isOnline } = useOfflineSync();
-  const table = getTableDetails(tableCode);
+  const [table, setTable] = useState(() => getTableDetails(tableCode));
+
+  useEffect(() => {
+    async function loadLiveTable() {
+      try {
+        const live = await getTableByCodeAction(tableCode);
+        if (live) {
+          setTable({
+            code: live.uniqueCode,
+            displayNumber: live.tableNumber,
+            capacity: live.capacity,
+            section: live.section,
+            serverName: live.serverName,
+          });
+        }
+      } catch (e) {
+        console.error("Error loading live table info:", e);
+      }
+    }
+    loadLiveTable();
+  }, [tableCode]);
 
   // Flow Stages: "browsing" | "order_placed" | "payment" | "feedback"
   const [flowStage, setFlowStage] = useState<"browsing" | "order_placed" | "payment" | "feedback">("browsing");
@@ -127,6 +147,27 @@ function OrderFlowContent({ tableCode }: { tableCode: string }) {
       quantity: ci.quantity,
     }));
 
+    if (isOnline) {
+      try {
+        const res = await submitOrderAction(tableCode, formattedItems, customerNote);
+        if (res.success && res.orderId) {
+          setActiveOrderId(res.orderId);
+          setOrderNum(res.orderNumber || `#KD-${res.orderId.substring(0, 5).toUpperCase()}`);
+          setFlowStage("order_placed");
+          setOrderStatus("placed");
+          toast({
+            title: "Order Sent to Kitchen & Saved to Database",
+            description: `Order ${res.orderNumber} for Table ${table.displayNumber} is now live in the kitchen!`,
+            type: "success",
+          });
+          setIsSubmittingOrder(false);
+          return;
+        }
+      } catch (err) {
+        console.warn("Direct order placement failed, falling back to offline queue:", err);
+      }
+    }
+
     const syncRes = await enqueueAndSyncIfOnline("CREATE_ORDER", {
       tableCode,
       items: formattedItems,
@@ -153,10 +194,6 @@ function OrderFlowContent({ tableCode }: { tableCode: string }) {
         description: `Order ${orderNum} for Table ${table.displayNumber} is live!`,
         type: "success",
       });
-
-      setTimeout(() => {
-        setOrderStatus("preparing");
-      }, 3000);
     } else {
       toast({
         title: "Order Saved Offline",
@@ -173,6 +210,24 @@ function OrderFlowContent({ tableCode }: { tableCode: string }) {
     setIsProcessingPayment(true);
     const subtotal = placedOrderItems.reduce((acc, ci) => acc + ci.item.price * ci.quantity, 0);
     const totalAmount = Math.round(subtotal * 1.15 * 1.1);
+
+    if (isOnline && activeOrderId) {
+      try {
+        const res = await submitPaymentAction(activeOrderId, tableCode, method as any, totalAmount);
+        if (res.success) {
+          setIsProcessingPayment(false);
+          setFlowStage("feedback");
+          toast({
+            title: "Payment Settled & Saved to Database",
+            description: `Thank you! Bill settled via ${method.replace("_", " ").toUpperCase()}. Table marked free.`,
+            type: "success",
+          });
+          return;
+        }
+      } catch (err) {
+        console.warn("Direct payment failed, falling back to queue:", err);
+      }
+    }
 
     const syncRes = await enqueueAndSyncIfOnline("PROCESS_PAYMENT", {
       orderId: activeOrderId,

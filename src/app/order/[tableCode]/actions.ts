@@ -21,6 +21,57 @@ export interface CustomerOrderItemInput {
   quantity: number;
 }
 
+export interface LiveTableInfo {
+  id: string;
+  uniqueCode: string;
+  tableNumber: number;
+  capacity: number;
+  section: string;
+  status: string;
+  serverName: string;
+  assignedStaffId?: string;
+}
+
+export async function getTableByCodeAction(tableCode: string): Promise<LiveTableInfo | null> {
+  try {
+    const supabase = await getSupabase();
+    const cleanCode = tableCode.trim().toUpperCase();
+
+    const { data, error } = await supabase
+      .from("tables")
+      .select(`
+        id,
+        table_number,
+        unique_code,
+        capacity,
+        status,
+        section_name,
+        assigned_staff_id,
+        staff:assigned_staff_id (id, full_name, role)
+      `)
+      .or(`unique_code.eq.${cleanCode},unique_code.eq.${tableCode}`)
+      .maybeSingle();
+
+    if (!error && data) {
+      const staffObj = Array.isArray(data.staff) ? data.staff[0] : data.staff;
+      return {
+        id: data.id,
+        uniqueCode: data.unique_code,
+        tableNumber: data.table_number,
+        capacity: data.capacity || 4,
+        section: data.section_name || "Main Dining Hall",
+        status: data.status || "free",
+        serverName: staffObj?.full_name || "Floor Attendant",
+        assignedStaffId: data.assigned_staff_id || undefined,
+      };
+    }
+  } catch (err) {
+    console.error("Error fetching table by code:", err);
+  }
+
+  return null;
+}
+
 export async function submitOrderAction(
   tableCode: string,
   items: CustomerOrderItemInput[],
@@ -35,27 +86,41 @@ export async function submitOrderAction(
   try {
     const supabase = await getSupabase();
 
-    // 1. Fetch Table ID by tableCode
+    // 1. Fetch Table ID and assigned staff by tableCode
+    const cleanCode = tableCode.trim().toUpperCase();
     const { data: tableData } = await supabase
       .from("tables")
-      .select("id")
-      .eq("unique_code", tableCode)
+      .select("id, assigned_staff_id")
+      .or(`unique_code.eq.${cleanCode},unique_code.eq.${tableCode}`)
       .maybeSingle();
 
     const tableId = tableData?.id || null;
+    const assignedStaffId = tableData?.assigned_staff_id || null;
 
-    // 2. Insert Order Record into Supabase
+    // 2. Fetch all menu items to resolve UUIDs
+    const { data: dbMenuItems } = await supabase
+      .from("menu_items")
+      .select("id, name");
+
+    const menuItemMap = new Map<string, string>();
+    (dbMenuItems || []).forEach((mi: any) => {
+      menuItemMap.set(mi.id, mi.id);
+      menuItemMap.set(mi.name.toLowerCase().trim(), mi.id);
+    });
+    const defaultMenuItemId = dbMenuItems?.[0]?.id || "d0000000-0000-0000-0000-000000000001";
+
+    // 3. Insert Order Record into Supabase
     const { data: orderData, error: orderError } = await supabase
       .from("orders")
       .insert([
         {
           restaurant_id: DEFAULT_RESTAURANT_ID,
           table_id: tableId,
+          staff_id: assignedStaffId,
           status: "placed",
-          order_type: "dine_in",
-          payment_status: "pending",
+          channel: "dine_in",
           total_amount: totalAmount,
-          special_instructions: customerNote || null,
+          customer_notes: customerNote || null,
           created_at: new Date().toISOString(),
         },
       ])
@@ -63,25 +128,36 @@ export async function submitOrderAction(
 
     if (orderError || !orderData || orderData.length === 0) {
       console.error("Supabase Order Creation Error:", orderError?.message);
-      return { success: false, message: "Failed to save order to database." };
+      return { success: false, message: orderError?.message || "Failed to save order to database." };
     }
 
     const createdOrder = orderData[0];
     const orderId = createdOrder.id;
 
-    // 3. Insert Order Items
-    const itemRows = items.map((item) => ({
-      order_id: orderId,
-      menu_item_id: item.menuItemId || null,
-      title: item.title,
-      unit_price: item.price,
-      quantity: item.quantity,
-      subtotal: item.price * item.quantity,
-    }));
+    // 4. Insert Order Items
+    const itemRows = items.map((item) => {
+      let resolvedId = defaultMenuItemId;
+      if (item.menuItemId && menuItemMap.has(item.menuItemId)) {
+        resolvedId = menuItemMap.get(item.menuItemId)!;
+      } else if (menuItemMap.has(item.title.toLowerCase().trim())) {
+        resolvedId = menuItemMap.get(item.title.toLowerCase().trim())!;
+      }
 
-    await supabase.from("order_items").insert(itemRows);
+      return {
+        order_id: orderId,
+        menu_item_id: resolvedId,
+        quantity: item.quantity,
+        unit_price: item.price,
+        subtotal: item.price * item.quantity,
+      };
+    });
 
-    // 4. Update Table Status to 'occupied'
+    const { error: itemsError } = await supabase.from("order_items").insert(itemRows);
+    if (itemsError) {
+      console.error("Supabase Order Items Error:", itemsError.message);
+    }
+
+    // 5. Update Table Status to 'occupied'
     if (tableId) {
       await supabase
         .from("tables")
@@ -90,8 +166,10 @@ export async function submitOrderAction(
     }
 
     revalidatePath("/admin/tables");
+    revalidatePath("/admin/dashboard");
     revalidatePath("/admin/orders");
     revalidatePath("/chef/dashboard");
+    revalidatePath("/staff/dashboard");
 
     return {
       success: true,
@@ -113,23 +191,26 @@ export async function submitPaymentAction(
   try {
     const supabase = await getSupabase();
 
-    // 1. Insert Payment Record
-    await supabase.from("payments").insert([
-      {
-        restaurant_id: DEFAULT_RESTAURANT_ID,
-        order_id: orderId || null,
-        payment_method: method,
-        amount: amount,
-        status: "completed",
-        created_at: new Date().toISOString(),
-      },
-    ]);
+    const dbMethod = method === "cash" ? "cash" : method === "cbe_birr" ? "cbe_transfer" : "telegram";
 
-    // 2. Update Order Payment Status
+    // 1. Insert Payment Record
+    if (orderId) {
+      await supabase.from("payments").insert([
+        {
+          order_id: orderId,
+          method: dbMethod,
+          amount: amount,
+          status: "confirmed",
+          created_at: new Date().toISOString(),
+        },
+      ]);
+    }
+
+    // 2. Update Order Status
     if (orderId) {
       await supabase
         .from("orders")
-        .update({ payment_status: "paid", status: "served" })
+        .update({ status: "paid" })
         .eq("id", orderId);
     }
 
@@ -142,8 +223,10 @@ export async function submitPaymentAction(
     }
 
     revalidatePath("/admin/tables");
+    revalidatePath("/admin/dashboard");
     revalidatePath("/admin/orders");
     revalidatePath("/admin/finance");
+    revalidatePath("/staff/dashboard");
 
     return { success: true };
   } catch (err) {
@@ -161,16 +244,20 @@ export async function submitFeedbackAction(
   try {
     const supabase = await getSupabase();
 
-    await supabase.from("feedback").insert([
-      {
-        restaurant_id: DEFAULT_RESTAURANT_ID,
-        order_id: orderId || null,
-        food_quality_rating: foodRating,
-        service_quality_rating: serviceRating,
-        comments: comment || null,
-        created_at: new Date().toISOString(),
-      },
-    ]);
+    if (orderId) {
+      const weighted = Math.min(5, Math.max(1, (foodRating + serviceRating) / 2));
+      await supabase.from("feedback").insert([
+        {
+          order_id: orderId,
+          experience_rating_food: foodRating,
+          experience_rating_speed: serviceRating,
+          staff_rating_q1: serviceRating,
+          weighted_score: weighted,
+          customer_comment: comment || null,
+          created_at: new Date().toISOString(),
+        },
+      ]);
+    }
 
     revalidatePath("/admin/reviews");
     return { success: true };

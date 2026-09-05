@@ -29,20 +29,30 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { updateStaffProfileAndPinAction } from "@/app/staff-login/actions";
+import {
+  getStaffLiveTablesAction,
+  markOrderServedAction,
+  settleTableBillAction,
+  claimTableAction,
+  StaffStationTable as DBStaffStationTable,
+} from "./actions";
 
 interface StaffStationTable {
+  id?: string;
   code: string;
   section: string;
-  status: "free" | "occupied";
+  status: "free" | "occupied" | "reserved";
   capacity?: number;
   guests?: number;
   elapsedMinutes?: number;
   billTotal?: number;
+  activeOrderId?: string;
   activeOrder?: string;
   foodStatus?: "placed" | "preparing" | "ready" | "served";
   paymentMethod?: "cbe_birr" | "telebirr" | "cash" | "card";
   receiptImage?: string | null;
   transactionRef?: string;
+  assignedStaffId?: string;
 }
 
 interface TipEntry {
@@ -56,6 +66,8 @@ interface TipEntry {
 
 export default function StaffDashboardPage() {
   const [sessionUser, setSessionUser] = useState<any>(null);
+  const [stationFilter, setStationFilter] = useState<"assigned" | "all">("assigned");
+  const [tableCounts, setTableCounts] = useState<{ myCount: number; totalCount: number }>({ myCount: 0, totalCount: 0 });
 
   useEffect(() => {
     try {
@@ -80,66 +92,22 @@ export default function StaffDashboardPage() {
   };
 
   // Station Tables State
-  const [myTables, setMyTables] = useState<StaffStationTable[]>([
-    {
-      code: "T-03",
-      section: "Main Dining Hall",
-      status: "occupied",
-      capacity: 4,
-      guests: 4,
-      elapsedMinutes: 19,
-      billTotal: 2180,
-      activeOrder: "2x Lamb Derek Tibs, 1x Yetsom Beyaynetu, 2x Coffee",
-      foodStatus: "preparing",
-    },
-    {
-      code: "T-04",
-      section: "Main Dining Hall",
-      status: "occupied",
-      capacity: 4,
-      guests: 2,
-      elapsedMinutes: 14,
-      billTotal: 1160,
-      activeOrder: "1x Sizzling Tibs, 1x Kitfo Royale",
-      foodStatus: "ready",
-    },
-    {
-      code: "T-05",
-      section: "Main Dining Hall",
-      status: "occupied",
-      capacity: 6,
-      guests: 5,
-      elapsedMinutes: 45,
-      billTotal: 3420,
-      activeOrder: "1x Royal Doro Wat, 2x Awaze Tibs, Tej Decanter",
-      foodStatus: "served",
-      paymentMethod: "cbe_birr",
-      transactionRef: "CBE-98213-90",
-    },
-    {
-      code: "T-09",
-      section: "Main Dining Hall",
-      status: "free",
-      capacity: 4,
-    },
-    {
-      code: "T-11",
-      section: "Main Dining Hall",
-      status: "occupied",
-      capacity: 4,
-      guests: 4,
-      elapsedMinutes: 32,
-      billTotal: 1890,
-      activeOrder: "2x Awaze Tibs, 2x Baklava",
-      foodStatus: "placed",
-    },
-    {
-      code: "T-13",
-      section: "Main Dining Hall",
-      status: "free",
-      capacity: 6,
-    },
-  ]);
+  const [myTables, setMyTables] = useState<StaffStationTable[]>([]);
+
+  const loadTables = async () => {
+    const currentStaffId = sessionUser?.id || "b0000000-0000-0000-0000-000000000005";
+    const res = await getStaffLiveTablesAction(currentStaffId, stationFilter === "assigned");
+    if (res) {
+      setMyTables(res.tables || []);
+      setTableCounts({ myCount: res.myCount || 0, totalCount: res.totalCount || 0 });
+    }
+  };
+
+  useEffect(() => {
+    loadTables();
+    const interval = setInterval(loadTables, 3000);
+    return () => clearInterval(interval);
+  }, [sessionUser, stationFilter]);
 
   // Tips Tracking State (Received from Customer QR Order Payments)
   const [tips, setTips] = useState<TipEntry[]>([
@@ -202,28 +170,20 @@ export default function StaffDashboardPage() {
     }
   };
 
-  const handleConfirmSettlement = () => {
+  const handleConfirmSettlement = async () => {
     if (!settleTable) return;
-    setMyTables(
-      myTables.map((t) =>
-        t.code === settleTable.code
-          ? {
-              ...t,
-              status: "free",
-              billTotal: undefined,
-              activeOrder: undefined,
-              guests: undefined,
-              paymentMethod: settleMethod,
-              receiptImage: receiptImageFile,
-              transactionRef: settleTxRef,
-            }
-          : t
-      )
+    const dbMethod = settleMethod === "card" ? "cbe_birr" : settleMethod;
+    await settleTableBillAction(
+      settleTable.code,
+      settleTable.activeOrderId,
+      dbMethod as any,
+      settleTable.billTotal || 0
     );
-    showToast(`Table ${settleTable.code} bill settled (${settleMethod.toUpperCase()}) & cleared!`);
+    showToast(`Table ${settleTable.code} bill settled (${settleMethod.toUpperCase()}) & cleared in database!`);
     setSettleTable(null);
     setReceiptImageFile(null);
     setSettleTxRef("");
+    await loadTables();
   };
 
   const handleUpdateProfile = async (e: React.FormEvent) => {
@@ -250,18 +210,15 @@ export default function StaffDashboardPage() {
     }
   };
 
-  const advanceFoodStatus = (tableCode: string) => {
-    setMyTables(
-      myTables.map((t) => {
-        if (t.code === tableCode) {
-          if (t.foodStatus === "placed") return { ...t, foodStatus: "preparing" };
-          if (t.foodStatus === "preparing") return { ...t, foodStatus: "ready" };
-          if (t.foodStatus === "ready") return { ...t, foodStatus: "served" };
-        }
-        return t;
-      })
-    );
-    showToast(`Updated food progress for Table ${tableCode}!`);
+  const advanceFoodStatus = async (tableCode: string) => {
+    const target = myTables.find((t) => t.code === tableCode);
+    if (target?.activeOrderId && target.foodStatus === "ready") {
+      await markOrderServedAction(target.activeOrderId);
+      showToast(`Order for Table ${tableCode} marked as SERVED!`);
+      await loadTables();
+    } else {
+      showToast(`Kitchen status for ${tableCode}: ${(target?.foodStatus || "placed").toUpperCase()}`);
+    }
   };
 
   const totalTips = tips.reduce((acc, t) => acc + t.amount, 0);
@@ -361,151 +318,200 @@ export default function StaffDashboardPage() {
 
       {/* Section 1: My Assigned Station Floor Tables */}
       <div className="space-y-4">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
-            <h3 className="font-header text-lg font-bold text-brand-heading">
-              Station Floor Tables ({myTables.length} Tables)
+            <h3 className="font-header text-lg font-bold text-brand-heading flex items-center gap-2">
+              <span>Station Floor Tables</span>
+              <span className="text-xs font-normal text-brand-secondary">
+                ({myTables.length} {stationFilter === "assigned" ? "Assigned to You" : "Total Floor Tables"})
+              </span>
             </h3>
             <p className="text-xs text-brand-secondary mt-0.5">
-              Live orders, kitchen prep status, and receipt verification for your station.
+              Live orders, kitchen prep status, and receipt verification for {staffName}.
             </p>
           </div>
 
-          <span className="rounded-pill bg-bg-card px-3 py-1 text-xs font-bold text-brand-primary border border-divider">
-            {myTables.filter((t) => t.status === "occupied").length} Occupied / {myTables.length} Total
-          </span>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {myTables.map((table) => {
-            const isOccupied = table.status === "occupied";
-            return (
-              <div
-                key={table.code}
+          <div className="flex items-center gap-2">
+            <div className="inline-flex rounded-button p-1 bg-bg-card border border-divider shadow-xs">
+              <button
+                type="button"
+                onClick={() => setStationFilter("assigned")}
                 className={cn(
-                  "rounded-card p-5 border transition-all space-y-4 shadow-card flex flex-col justify-between",
-                  isOccupied
-                    ? "bg-white border-status-occupied/40"
-                    : "bg-bg-subtle border-divider opacity-90"
+                  "px-3 py-1 text-xs font-bold rounded-button transition",
+                  stationFilter === "assigned"
+                    ? "bg-brand-accent text-white shadow-xs"
+                    : "text-brand-secondary hover:text-brand-primary"
                 )}
               >
-                <div className="space-y-3">
-                  {/* Top Row */}
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <h4 className="font-header text-lg font-bold text-brand-heading">
-                        Table {table.code}
-                      </h4>
-                      <p className="text-[10px] text-brand-secondary">{table.section}</p>
-                    </div>
+                My Station ({tableCounts.myCount})
+              </button>
+              <button
+                type="button"
+                onClick={() => setStationFilter("all")}
+                className={cn(
+                  "px-3 py-1 text-xs font-bold rounded-button transition",
+                  stationFilter === "all"
+                    ? "bg-brand-accent text-white shadow-xs"
+                    : "text-brand-secondary hover:text-brand-primary"
+                )}
+              >
+                All Tables ({tableCounts.totalCount})
+              </button>
+            </div>
+          </div>
+        </div>
 
-                    <span
-                      className={cn(
-                        "rounded-pill px-2.5 py-0.5 text-[10px] font-bold uppercase",
-                        isOccupied ? "bg-status-occupied text-white" : "bg-status-free text-white"
-                      )}
-                    >
-                      {table.status}
-                    </span>
-                  </div>
+        {myTables.length === 0 ? (
+          <div className="rounded-card border border-dashed border-divider bg-bg-subtle p-8 text-center space-y-3">
+            <UtensilsCrossed className="mx-auto h-8 w-8 text-brand-secondary opacity-60" />
+            <div>
+              <p className="font-header font-bold text-sm text-brand-primary">No tables assigned to your station yet</p>
+              <p className="text-xs text-brand-secondary max-w-md mx-auto mt-1">
+                You are logged in as <strong>{staffName}</strong>. You currently have 0 tables assigned. Switch to <strong>All Tables</strong> or assign tables to this waiter in <strong>Admin &gt; Floor Table Management</strong>.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setStationFilter("all")}
+              className="px-4 py-2 rounded-button bg-brand-primary text-white text-xs font-bold hover:bg-black transition"
+            >
+              View All Floor Tables ({tableCounts.totalCount})
+            </button>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {myTables.map((table) => {
+              const isOccupied = table.status === "occupied";
+              const isAssignedToMe = table.assignedStaffId === staffId;
 
-                  {/* Details */}
-                  {isOccupied ? (
-                    <div className="space-y-3 text-xs">
-                      <div className="flex justify-between text-[11px] text-brand-secondary">
-                        <span>Guests Seated: <strong>{table.guests} Guests</strong></span>
-                        <span className="flex items-center gap-1 text-status-occupied font-semibold">
-                          <Clock className="h-3 w-3" />
-                          {table.elapsedMinutes}m
-                        </span>
+              return (
+                <div
+                  key={table.code}
+                  className={cn(
+                    "rounded-card p-5 border transition-all shadow-card flex flex-col justify-between",
+                    isOccupied
+                      ? "bg-white border-status-occupied/40"
+                      : "bg-bg-subtle border-divider opacity-90"
+                  )}
+                >
+                  <div className="space-y-3">
+                    {/* Top Row */}
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <h4 className="font-header text-lg font-bold text-brand-heading">
+                            Table {table.code}
+                          </h4>
+                          {isAssignedToMe && (
+                            <span className="rounded-pill bg-brand-accent/10 px-2 py-0.5 text-[9px] font-bold text-brand-accent border border-brand-accent/20">
+                              My Table
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-[10px] text-brand-secondary">{table.section}</p>
                       </div>
 
-                      {/* Live Food Status Progress */}
-                      {table.foodStatus && (
-                        <div className="rounded-button bg-bg-subtle p-2.5 border border-divider space-y-1.5">
-                          <div className="flex items-center justify-between">
-                            <span className="text-[10px] font-bold uppercase text-brand-secondary flex items-center gap-1">
-                              <Flame className="h-3 w-3 text-brand-accent" />
-                              Kitchen Status:
-                            </span>
+                      <span
+                        className={cn(
+                          "rounded-pill px-2.5 py-0.5 text-[10px] font-bold uppercase",
+                          isOccupied ? "bg-status-occupied text-white" : "bg-status-free text-white"
+                        )}
+                      >
+                        {table.status}
+                      </span>
+                    </div>
+
+                    {/* Details */}
+                    {isOccupied ? (
+                      <div className="space-y-3 text-xs">
+                        <div className="flex justify-between text-[11px] text-brand-secondary">
+                          <span>Guests Seated: <strong>{table.guests} Guests</strong></span>
+                          <span className="flex items-center gap-1 text-status-occupied font-semibold">
+                            <Clock className="h-3 w-3" />
+                            {table.elapsedMinutes}m
+                          </span>
+                        </div>
+
+                        {/* Live Food Status Progress */}
+                        <div className="rounded-card bg-bg-subtle p-2.5 border border-divider space-y-1.5">
+                          <div className="flex items-center justify-between text-[11px]">
+                            <span className="font-bold text-brand-primary">Kitchen Status:</span>
                             <span
-                              onClick={() => advanceFoodStatus(table.code)}
                               className={cn(
-                                "rounded-pill px-2 py-0.2 text-[10px] font-bold uppercase cursor-pointer hover:opacity-80 transition",
-                                table.foodStatus === "placed" && "bg-status-danger-bg text-status-danger border border-status-danger/30",
-                                table.foodStatus === "preparing" && "bg-status-occupied-bg text-status-occupied border border-status-occupied/30",
-                                table.foodStatus === "ready" && "bg-status-kitchen-bg text-status-kitchen border border-status-kitchen/30",
-                                table.foodStatus === "served" && "bg-status-free-bg text-status-free border border-status-free/30"
+                                "font-bold uppercase text-[10px] px-2 py-0.5 rounded-pill",
+                                table.foodStatus === "placed" && "bg-status-placed-bg text-status-placed",
+                                table.foodStatus === "preparing" && "bg-status-preparing-bg text-status-preparing",
+                                table.foodStatus === "ready" && "bg-status-ready-bg text-status-ready animate-pulse font-extrabold",
+                                table.foodStatus === "served" && "bg-status-served-bg text-status-served"
                               )}
                             >
-                              {table.foodStatus} ➔
+                              {table.foodStatus || "placed"}
                             </span>
                           </div>
 
-                          <p className="text-xs font-semibold text-brand-primary truncate">
+                          <p className="text-[11px] text-brand-secondary line-clamp-2">
                             {table.activeOrder}
                           </p>
-                        </div>
-                      )}
 
-                      {/* Attached Receipt Image Thumbnail if any */}
-                      {table.receiptImage && (
-                        <div className="rounded-button bg-status-free-bg/40 p-2 border border-status-free/30 flex items-center gap-2">
-                          <img
-                            src={table.receiptImage}
-                            alt="Receipt proof"
-                            className="h-10 w-10 object-cover rounded border border-divider shrink-0"
-                          />
-                          <div className="text-[11px]">
-                            <p className="font-bold text-status-free flex items-center gap-1">
-                              <FileCheck className="h-3.5 w-3.5" />
-                              Receipt Verified
-                            </p>
-                            <p className="text-[10px] text-brand-secondary font-mono">
-                              {table.transactionRef || "Paper Receipt"}
-                            </p>
-                          </div>
+                          {table.foodStatus === "ready" && (
+                            <button
+                              type="button"
+                              onClick={() => advanceFoodStatus(table.code)}
+                              className="w-full mt-1.5 py-1.5 rounded-button bg-status-ready text-white font-bold text-xs hover:opacity-90 transition flex items-center justify-center gap-1 shadow-xs"
+                            >
+                              <CheckCircle2 className="h-3.5 w-3.5" />
+                              <span>Food Ready • Mark as Served</span>
+                            </button>
+                          )}
                         </div>
-                      )}
-                    </div>
-                  ) : (
-                    <div className="py-4 text-center text-xs text-brand-secondary space-y-2">
-                      <p>Table clean &amp; ready ({table.capacity} Seats)</p>
-                      <Link
-                        href={`/order/${table.code}`}
-                        target="_blank"
-                        className="inline-flex items-center gap-1 text-brand-accent font-bold text-xs hover:underline"
+                      </div>
+                    ) : (
+                      <div className="py-4 text-center space-y-2">
+                        <p className="text-xs text-brand-secondary">
+                          Table is free and sanitized for next dining guests.
+                        </p>
+                        {!table.assignedStaffId && (
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              await claimTableAction(table.code, staffId);
+                              showToast(`Table ${table.code} claimed to your station!`);
+                              await loadTables();
+                            }}
+                            className="rounded-button bg-brand-accent/10 hover:bg-brand-accent/20 text-brand-accent border border-brand-accent/30 px-3 py-1 text-xs font-bold transition"
+                          >
+                            + Claim Table
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Bottom Settlement Row */}
+                  {isOccupied && (
+                    <div className="pt-3 border-t border-divider flex items-center justify-between mt-2">
+                      <div>
+                        <p className="text-[10px] text-brand-secondary uppercase">Current Bill</p>
+                        <p className="font-header text-base font-bold text-brand-heading">
+                          ETB {(table.billTotal || 0).toLocaleString()}
+                        </p>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => setSettleTable(table)}
+                        className="rounded-button bg-status-free px-3.5 py-1.5 text-xs font-bold text-white shadow-xs hover:opacity-90 transition cursor-pointer flex items-center gap-1"
                       >
-                        <span>Open Customer QR Menu</span>
-                        <ExternalLink className="h-3 w-3" />
-                      </Link>
+                        <Upload className="h-3.5 w-3.5" />
+                        <span>Settle &amp; Clear</span>
+                      </button>
                     </div>
                   )}
                 </div>
-
-                {/* Bottom Settlement Row */}
-                {isOccupied && (
-                  <div className="pt-3 border-t border-divider flex items-center justify-between mt-2">
-                    <div>
-                      <p className="text-[10px] text-brand-secondary uppercase">Current Bill</p>
-                      <p className="font-header text-base font-bold text-brand-heading">
-                        ETB {(table.billTotal || 0).toLocaleString()}
-                      </p>
-                    </div>
-
-                    <button
-                      onClick={() => setSettleTable(table)}
-                      className="rounded-button bg-status-free px-3.5 py-1.5 text-xs font-bold text-white shadow-xs hover:opacity-90 transition cursor-pointer flex items-center gap-1"
-                    >
-                      <Upload className="h-3.5 w-3.5" />
-                      <span>Settle &amp; Clear</span>
-                    </button>
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {/* Section 2: Shift Customer Tips Log (Read-Only Telemetry) */}

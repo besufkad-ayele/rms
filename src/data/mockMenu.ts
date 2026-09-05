@@ -222,9 +222,9 @@ export const MOCK_TABLES: Record<string, TableInfo> = {
   "T-03": { code: "T-03", displayNumber: 3, capacity: 4, section: "Main Dining Hall", serverName: "Michael Tadesse" },
   "T-04": { code: "T-04", displayNumber: 4, capacity: 4, section: "Main Dining Hall", serverName: "Michael Tadesse" },
   "T-05": { code: "T-05", displayNumber: 5, capacity: 6, section: "Main Dining Hall", serverName: "Michael Tadesse" },
-  "T-06": { code: "T-06", displayNumber: 6, capacity: 2, section: "Lounge & Bar", serverName: "Eden Haile" },
-  "T-07": { code: "T-07", displayNumber: 7, capacity: 4, section: "Lounge & Bar", serverName: "Eden Haile" },
-  "T-08": { code: "T-08", displayNumber: 8, capacity: 8, section: "Private VIP Alcove", serverName: "Dawit Bekele" },
+  "T-06": { code: "T-06", displayNumber: 6, capacity: 2, section: "Lounge & Bar", serverName: "Michael Tadesse" },
+  "T-07": { code: "T-07", displayNumber: 7, capacity: 4, section: "Lounge & Bar", serverName: "Michael Tadesse" },
+  "T-08": { code: "T-08", displayNumber: 8, capacity: 8, section: "Private VIP Alcove", serverName: "Sara Mengistu" },
   "T-09": { code: "T-09", displayNumber: 9, capacity: 4, section: "Main Dining Hall", serverName: "Michael Tadesse" },
   "T-10": { code: "T-10", displayNumber: 10, capacity: 2, section: "Courtyard Hearth", serverName: "Sara Mengistu" },
 };
@@ -242,6 +242,6 @@ export function getTableDetails(code: string): TableInfo {
     displayNumber: num,
     capacity: 4,
     section: "Main Dining Room",
-    serverName: "Michael Tadesse",
+    serverName: num % 2 === 0 ? "Sara Mengistu" : "Michael Tadesse",
   };
 }

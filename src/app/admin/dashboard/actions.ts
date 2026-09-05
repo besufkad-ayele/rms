@@ -109,33 +109,62 @@ export async function getDashboardData() {
         unique_code,
         capacity,
         status,
+        section_name,
         assigned_staff_id,
         current_order_id,
-        staff:assigned_staff_id (full_name, role),
-        order:current_order_id (id, total_amount, created_at)
+        staff:assigned_staff_id (full_name, role)
       `)
       .order("table_number", { ascending: true });
 
+    if (tablesErr) {
+      console.error("Tables fetch error:", tablesErr.message);
+    }
+
+    // Safely fetch active orders for occupied tables
+    const activeOrderIds = (dbTables || [])
+      .map((t: any) => t.current_order_id)
+      .filter((id: any) => Boolean(id));
+
+    let activeOrdersMap: Record<string, { total_amount: number; created_at: string }> = {};
+    if (activeOrderIds.length > 0) {
+      const { data: activeOrders } = await supabase
+        .from("orders")
+        .select("id, total_amount, created_at")
+        .in("id", activeOrderIds);
+
+      if (activeOrders) {
+        activeOrders.forEach((o: any) => {
+          activeOrdersMap[o.id] = {
+            total_amount: Number(o.total_amount || 0),
+            created_at: o.created_at,
+          };
+        });
+      }
+    }
+
     let tables: TableFloorState[] = [];
-    if (!tablesErr && dbTables) {
+    if (dbTables && dbTables.length > 0) {
       tables = dbTables.map((t: any) => {
-        const orderCreatedAt = t.order?.created_at;
+        const orderInfo = t.current_order_id ? activeOrdersMap[t.current_order_id] : undefined;
+        const orderCreatedAt = orderInfo?.created_at;
         const occupiedMins = orderCreatedAt
           ? Math.max(1, Math.floor((Date.now() - new Date(orderCreatedAt).getTime()) / (1000 * 60)))
           : undefined;
+
+        const staffData = Array.isArray(t.staff) ? t.staff[0] : t.staff;
 
         return {
           id: t.id,
           table_number: t.table_number,
           unique_code: t.unique_code,
           capacity: t.capacity || 4,
-          section: getSectionForTableNumber(t.table_number),
+          section: (t.section_name as any) || getSectionForTableNumber(t.table_number),
           status: t.status as "free" | "occupied" | "reserved",
           assigned_staff_id: t.assigned_staff_id || undefined,
-          assigned_staff_name: t.staff?.full_name || undefined,
-          assigned_staff_role: t.staff?.role || undefined,
+          assigned_staff_name: staffData?.full_name || undefined,
+          assigned_staff_role: staffData?.role || undefined,
           current_order_id: t.current_order_id || undefined,
-          current_order_total: t.order?.total_amount ? Number(t.order.total_amount) : undefined,
+          current_order_total: orderInfo ? orderInfo.total_amount : undefined,
           occupied_since_minutes: occupiedMins,
           active_guest_count: t.status === "occupied" ? Math.min(t.capacity || 4, 4) : undefined,
         };
