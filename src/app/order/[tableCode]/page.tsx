@@ -532,12 +532,26 @@ function OrderFlowContent({ tableCode }: { tableCode: string }) {
             <RatingStep
               serverName={table.serverName}
               tableCode={tableCode}
-              onSubmitRating={(data) => {
-                toast({
-                  title: "Feedback Recorded",
-                  description: "Thank you for helping us elevate our culinary craft!",
-                  type: "success",
-                });
+              onSubmitRating={async (data) => {
+                try {
+                  await submitFeedbackAction({
+                    orderId: activeOrderId || undefined,
+                    tableCode,
+                    staffFriendliness: data.staffFriendliness,
+                    staffPromptness: data.staffPromptness,
+                    foodRating: data.foodRating,
+                    ambienceRating: data.ambienceRating,
+                    comment: data.comment,
+                    redirectedToGoogle: data.redirectedToGoogle,
+                  });
+                  toast({
+                    title: "Feedback Recorded",
+                    description: "Thank you for helping us elevate our culinary craft!",
+                    type: "success",
+                  });
+                } catch (err) {
+                  console.error("Error submitting feedback:", err);
+                }
               }}
             />
           </div>

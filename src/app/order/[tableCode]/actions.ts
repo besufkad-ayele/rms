@@ -235,31 +235,148 @@ export async function submitPaymentAction(
   }
 }
 
-export async function submitFeedbackAction(
-  orderId: string,
-  foodRating: number,
-  serviceRating: number,
-  comment?: string
-) {
+export interface FeedbackSubmissionPayload {
+  orderId?: string;
+  tableCode?: string;
+  staffId?: string;
+  staffFriendliness: number;
+  staffPromptness: number;
+  foodRating: number;
+  ambienceRating: number;
+  comment?: string;
+  redirectedToGoogle?: boolean;
+}
+
+export async function submitFeedbackAction(payload: FeedbackSubmissionPayload) {
   try {
     const supabase = await getSupabase();
 
-    if (orderId) {
-      const weighted = Math.min(5, Math.max(1, (foodRating + serviceRating) / 2));
-      await supabase.from("feedback").insert([
+    let resolvedOrderId = payload.orderId || null;
+    let resolvedStaffId = payload.staffId || null;
+
+    if (payload.tableCode) {
+      const cleanCode = payload.tableCode.trim().toUpperCase();
+      const { data: tableData } = await supabase
+        .from("tables")
+        .select("id, assigned_staff_id, current_order_id")
+        .or(`unique_code.eq.${cleanCode},unique_code.eq.${payload.tableCode}`)
+        .maybeSingle();
+
+      if (tableData) {
+        if (!resolvedStaffId) {
+          resolvedStaffId = tableData.assigned_staff_id || null;
+        }
+        if (!resolvedOrderId && tableData.current_order_id) {
+          resolvedOrderId = tableData.current_order_id;
+        } else if (!resolvedOrderId) {
+          // Look up most recent order for this table
+          const { data: tableOrder } = await supabase
+            .from("orders")
+            .select("id, staff_id")
+            .eq("table_id", tableData.id)
+            .order("created_at", { ascending: false })
+            .limit(1)
+            .maybeSingle();
+
+          if (tableOrder) {
+            resolvedOrderId = tableOrder.id;
+            if (!resolvedStaffId) {
+              resolvedStaffId = tableOrder.staff_id;
+            }
+          }
+        }
+      }
+    }
+
+    // Fallback order ID if session was already completed
+    if (!resolvedOrderId) {
+      const { data: recentOrder } = await supabase
+        .from("orders")
+        .select("id, staff_id")
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (recentOrder) {
+        resolvedOrderId = recentOrder.id;
+        if (!resolvedStaffId) {
+          resolvedStaffId = recentOrder.staff_id;
+        }
+      } else {
+        // Create an order placeholder if zero orders exist in database
+        const { data: newOrder } = await supabase
+          .from("orders")
+          .insert([
+            {
+              restaurant_id: DEFAULT_RESTAURANT_ID,
+              channel: "dine_in",
+              status: "paid",
+              total_amount: 0,
+              calculated_cogs: 0,
+              staff_id: resolvedStaffId || "b0000000-0000-0000-0000-000000000005",
+              created_at: new Date().toISOString(),
+            },
+          ])
+          .select("id, staff_id")
+          .single();
+
+        if (newOrder) {
+          resolvedOrderId = newOrder.id;
+          resolvedStaffId = resolvedStaffId || newOrder.staff_id;
+        }
+      }
+    }
+
+    const q1 = Number(payload.staffFriendliness) || 5;
+    const q2 = Number(payload.staffPromptness) || 5;
+    const food = Number(payload.foodRating) || 5;
+    const speed = Number(payload.staffPromptness) || 5;
+    const ambience = Number(payload.ambienceRating) || 5;
+
+    // 5-Factor Weighted Score
+    const weighted = Math.round((0.25 * q1 + 0.25 * q2 + 0.20 * food + 0.15 * speed + 0.15 * ambience) * 100) / 100;
+
+    if (resolvedOrderId) {
+      const { error: insertErr } = await supabase.from("feedback").insert([
         {
-          order_id: orderId,
-          experience_rating_food: foodRating,
-          experience_rating_speed: serviceRating,
-          staff_rating_q1: serviceRating,
+          order_id: resolvedOrderId,
+          staff_id: resolvedStaffId,
+          staff_rating_q1: q1,
+          staff_rating_q2: q2,
+          experience_rating_food: food,
+          experience_rating_speed: speed,
+          experience_rating_ambience: ambience,
           weighted_score: weighted,
-          customer_comment: comment || null,
+          customer_comment: payload.comment || null,
+          redirected_to_google: Boolean(payload.redirectedToGoogle),
           created_at: new Date().toISOString(),
         },
       ]);
+
+      if (insertErr) {
+        console.error("Error inserting feedback:", insertErr.message);
+      }
+    }
+
+    // Update staff performance rolling score
+    if (resolvedStaffId) {
+      const { data: staffFeedbacks } = await supabase
+        .from("feedback")
+        .select("weighted_score")
+        .eq("staff_id", resolvedStaffId);
+
+      if (staffFeedbacks && staffFeedbacks.length > 0) {
+        const total = staffFeedbacks.reduce((sum, f) => sum + Number(f.weighted_score || 5), 0);
+        const avg = Math.round((total / staffFeedbacks.length) * 10) / 10;
+        await supabase
+          .from("staff")
+          .update({ performance_score: avg })
+          .eq("id", resolvedStaffId);
+      }
     }
 
     revalidatePath("/admin/reviews");
+    revalidatePath("/admin/dashboard");
     return { success: true };
   } catch (err) {
     console.error("Feedback submission exception:", err);

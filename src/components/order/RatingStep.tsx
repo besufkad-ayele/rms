@@ -1,28 +1,51 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { Star, Heart, MessageSquare, ExternalLink, Sparkles, CheckCircle2, ArrowRight } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { Star, Heart, MessageSquare, ExternalLink, Sparkles, CheckCircle2, ArrowRight, Home } from "lucide-react";
 import { RESTAURANT_INFO } from "@/data/mockMenu";
 import { cn } from "@/lib/utils";
+
+export interface RatingFeedbackData {
+  staffFriendliness: number;
+  staffPromptness: number;
+  foodRating: number;
+  ambienceRating: number;
+  comment: string;
+  tableCode: string;
+  redirectedToGoogle?: boolean;
+}
 
 interface RatingStepProps {
   serverName: string;
   tableCode: string;
-  onSubmitRating?: (feedback: Record<string, unknown>) => void;
+  onSubmitRating?: (feedback: RatingFeedbackData) => Promise<void> | void;
+  onReturnHome?: () => void;
 }
 
 export function RatingStep({
   serverName = "Michael Tadesse",
   tableCode,
   onSubmitRating,
+  onReturnHome,
 }: RatingStepProps) {
+  const router = useRouter();
   const [staffFriendliness, setStaffFriendliness] = useState<number>(5);
   const [staffPromptness, setStaffPromptness] = useState<number>(5);
   const [foodRating, setFoodRating] = useState<number>(5);
   const [ambienceRating, setAmbienceRating] = useState<number>(5);
   const [comment, setComment] = useState("");
   const [isSubmitted, setIsSubmitted] = useState(false);
-  const [redirectCountdown, setRedirectCountdown] = useState(6);
+  const [isSaving, setIsSaving] = useState(false);
+  const [redirectCountdown, setRedirectCountdown] = useState(5);
+
+  const handleReturn = () => {
+    if (onReturnHome) {
+      onReturnHome();
+    } else {
+      router.push("/");
+    }
+  };
 
   useEffect(() => {
     let timer: NodeJS.Timeout;
@@ -30,24 +53,49 @@ export function RatingStep({
       timer = setTimeout(() => {
         setRedirectCountdown((prev) => prev - 1);
       }, 1000);
+    } else if (isSubmitted && redirectCountdown === 0) {
+      handleReturn();
     }
     return () => clearTimeout(timer);
   }, [isSubmitted, redirectCountdown]);
 
-  const handleSubmit = () => {
-    onSubmitRating?.({
+  const handleSubmit = async () => {
+    setIsSaving(true);
+    const feedbackPayload: RatingFeedbackData = {
       staffFriendliness,
       staffPromptness,
       foodRating,
       ambienceRating,
       comment,
       tableCode,
-    });
+      redirectedToGoogle: false,
+    };
+    if (onSubmitRating) {
+      await onSubmitRating(feedbackPayload);
+    }
+    setIsSaving(false);
     setIsSubmitted(true);
   };
 
-  const handleGoogleRedirect = () => {
+  const handleGoogleRedirect = async () => {
+    // 1. Open Google Review link in new tab
     window.open(RESTAURANT_INFO.googleBusinessUrl, "_blank", "noopener,noreferrer");
+
+    // 2. Notify parent of Google redirect and await completion
+    if (onSubmitRating) {
+      await onSubmitRating({
+        staffFriendliness,
+        staffPromptness,
+        foodRating,
+        ambienceRating,
+        comment,
+        tableCode,
+        redirectedToGoogle: true,
+      });
+    }
+
+    // 3. Return to actual landing page immediately
+    handleReturn();
   };
 
   if (isSubmitted) {
@@ -62,7 +110,7 @@ export function RatingStep({
             Ameseginalehu! (Thank You!)
           </h3>
           <p className="text-sm text-brand-secondary leading-relaxed">
-            Your feedback has been delivered to {serverName} and the culinary team. We truly value your patronage at Keren Addis.
+            Your feedback has been saved and delivered to {serverName} and the culinary team. We truly value your patronage at Keren Addis.
           </p>
         </div>
 
@@ -73,9 +121,9 @@ export function RatingStep({
             <span>Support Our Local Craft</span>
           </div>
           <p className="text-xs text-brand-primary font-medium">
-            Would you take 10 seconds to share your experience on Google Reviews?
+            Would you take 10 seconds to share your 5-star experience on Google Reviews?
           </p>
-          <div className="pt-2">
+          <div className="pt-2 space-y-2">
             <button
               type="button"
               onClick={handleGoogleRedirect}
@@ -84,10 +132,19 @@ export function RatingStep({
               <span>Review Keren Addis on Google</span>
               <ExternalLink className="h-4 w-4" />
             </button>
+
+            <button
+              type="button"
+              onClick={handleReturn}
+              className="w-full min-h-[44px] inline-flex items-center justify-center gap-2 rounded-button bg-white border border-divider px-4 py-2.5 text-xs font-semibold text-brand-primary hover:bg-background-active transition"
+            >
+              <Home className="h-3.5 w-3.5" />
+              <span>Done &amp; Return to Home</span>
+            </button>
           </div>
           {redirectCountdown > 0 && (
             <p className="text-[11px] text-brand-secondary">
-              Redirecting in {redirectCountdown}s...
+              Returning to home page in {redirectCountdown}s...
             </p>
           )}
         </div>

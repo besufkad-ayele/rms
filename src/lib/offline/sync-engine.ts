@@ -63,8 +63,17 @@ export async function processOfflineQueue(): Promise<SyncResult> {
           break;
         }
         case "SUBMIT_FEEDBACK": {
-          const { orderId, foodRating, serviceRating, comment } = item.payload;
-          response = await submitFeedbackAction(orderId, foodRating, serviceRating, comment);
+          const { orderId, tableCode, staffFriendliness, staffPromptness, foodRating, ambienceRating, comment, redirectedToGoogle } = item.payload;
+          response = await submitFeedbackAction({
+            orderId,
+            tableCode,
+            staffFriendliness: staffFriendliness || 5,
+            staffPromptness: staffPromptness || 5,
+            foodRating: foodRating || 5,
+            ambienceRating: ambienceRating || 5,
+            comment,
+            redirectedToGoogle,
+          });
           break;
         }
         default: {
