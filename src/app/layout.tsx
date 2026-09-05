@@ -17,6 +17,8 @@ const lato = Lato({
 });
 
 import { LanguageProvider } from "@/context/LanguageContext";
+import { OfflineSyncProvider } from "@/context/OfflineSyncContext";
+import { OfflineSyncBanner } from "@/components/ui/OfflineSyncBanner";
 
 export const metadata: Metadata = {
   title: "Keren Addis - Restaurant Management System & Fine Dining",
@@ -31,9 +33,12 @@ export default function RootLayout({
   return (
     <html lang="en" className={`${montserrat.variable} ${lato.variable}`}>
       <body className="min-h-screen bg-white text-brand-primary font-nyala antialiased">
-        <LanguageProvider>
-          {children}
-        </LanguageProvider>
+        <OfflineSyncProvider>
+          <OfflineSyncBanner />
+          <LanguageProvider>
+            {children}
+          </LanguageProvider>
+        </OfflineSyncProvider>
       </body>
     </html>
   );

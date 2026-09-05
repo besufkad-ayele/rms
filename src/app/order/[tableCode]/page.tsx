@@ -34,6 +34,7 @@ import { PaymentMethodCard, PaymentMethod } from "@/components/order/PaymentMeth
 import { RatingStep } from "@/components/order/RatingStep";
 import { ToastProvider, useToast } from "@/components/ui/Toast";
 import { formatETB, cn } from "@/lib/utils";
+import { useOfflineSync } from "@/context/OfflineSyncContext";
 
 interface PageProps {
   params: Promise<{ tableCode: string }>;
@@ -41,6 +42,7 @@ interface PageProps {
 
 function OrderFlowContent({ tableCode }: { tableCode: string }) {
   const { toast } = useToast();
+  const { enqueueAndSyncIfOnline, isOnline } = useOfflineSync();
   const table = getTableDetails(tableCode);
 
   // Flow Stages: "browsing" | "order_placed" | "payment" | "feedback"
@@ -113,7 +115,7 @@ function OrderFlowContent({ tableCode }: { tableCode: string }) {
     setCartItems((prev) => prev.filter((ci) => ci.item.id !== itemId));
   };
 
-  // Place Order Action (Database Integration)
+  // Place Order Action (Database & Offline Integration)
   const handlePlaceOrder = async () => {
     setIsSubmittingOrder(true);
     setPlacedOrderItems([...cartItems]);
@@ -125,17 +127,30 @@ function OrderFlowContent({ tableCode }: { tableCode: string }) {
       quantity: ci.quantity,
     }));
 
-    const res = await submitOrderAction(tableCode, formattedItems, customerNote);
+    const syncRes = await enqueueAndSyncIfOnline("CREATE_ORDER", {
+      tableCode,
+      items: formattedItems,
+      customerNote,
+    });
 
     setIsSubmittingOrder(false);
-    if (res.success && res.orderId) {
-      setActiveOrderId(res.orderId);
-      if (res.orderNumber) setOrderNum(res.orderNumber);
+
+    if (syncRes.offlineQueued) {
+      const offlineNum = `#OFFLINE-${Math.floor(1000 + Math.random() * 9000)}`;
+      setOrderNum(offlineNum);
+      setFlowStage("order_placed");
+      setOrderStatus("placed");
+      toast({
+        title: "Order Saved Offline",
+        description: "Network offline or slow. Saved to local terminal queue for auto-sync.",
+        type: "info",
+      });
+    } else if (syncRes.success) {
       setFlowStage("order_placed");
       setOrderStatus("placed");
       toast({
         title: "Order Saved to Database & Sent to Kitchen",
-        description: `Order ${res.orderNumber || orderNum} for Table ${table.displayNumber} is now live in KDS!`,
+        description: `Order ${orderNum} for Table ${table.displayNumber} is live!`,
         type: "success",
       });
 
@@ -145,7 +160,7 @@ function OrderFlowContent({ tableCode }: { tableCode: string }) {
     } else {
       toast({
         title: "Order Saved Offline",
-        description: res.message || "Saved to local terminal",
+        description: syncRes.message || "Saved to local terminal queue.",
         type: "info",
       });
       setFlowStage("order_placed");
@@ -153,20 +168,27 @@ function OrderFlowContent({ tableCode }: { tableCode: string }) {
     }
   };
 
-  // Payment Confirmation Action (Database Integration)
+  // Payment Confirmation Action (Database & Offline Integration)
   const handlePaymentConfirmed = async (method: PaymentMethod, reference?: string) => {
     setIsProcessingPayment(true);
     const subtotal = placedOrderItems.reduce((acc, ci) => acc + ci.item.price * ci.quantity, 0);
     const totalAmount = Math.round(subtotal * 1.15 * 1.1);
 
-    await submitPaymentAction(activeOrderId, tableCode, method as any, totalAmount);
+    const syncRes = await enqueueAndSyncIfOnline("PROCESS_PAYMENT", {
+      orderId: activeOrderId,
+      tableCode,
+      method,
+      amount: totalAmount,
+    });
 
     setIsProcessingPayment(false);
     setFlowStage("feedback");
     toast({
-      title: "Payment Settled & Saved to Database",
-      description: `Thank you! Bill settled via ${method.replace("_", " ").toUpperCase()}. Table marked free.`,
-      type: "success",
+      title: syncRes.offlineQueued ? "Payment Stored Offline" : "Payment Settled & Saved to Database",
+      description: syncRes.offlineQueued
+        ? "Payment queued in local database. Will auto-sync when online."
+        : `Thank you! Bill settled via ${method.replace("_", " ").toUpperCase()}. Table marked free.`,
+      type: syncRes.offlineQueued ? "info" : "success",
     });
   };
 
