@@ -76,8 +76,9 @@ export async function getMenuItemOptionsAction(
     const supabase = await getSupabase();
     const { data: recipes } = await supabase
       .from("recipes")
-      .select("ingredient_id, ingredient:ingredient_id (id, name)")
-      .eq("menu_item_id", menuItemId);
+      .select("ingredient_id, quantity_required, ingredient:ingredient_id (id, name)")
+      .eq("menu_item_id", menuItemId)
+      .order("quantity_required", { ascending: false });
 
     let ingredients: MenuIngredientOption[] = [];
     if (recipes && recipes.length > 0) {

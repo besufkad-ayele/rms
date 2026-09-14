@@ -39,10 +39,15 @@ export function DishDetailModal({
 
   useEffect(() => {
     if (!isOpen || !item || !isOrderMode) return;
+    const currentItem = item;
     let cancelled = false;
     async function load() {
       setLoadingOptions(true);
-      const res = await getMenuItemOptionsAction(item.id, item.name, item.ingredients);
+      const res = await getMenuItemOptionsAction(
+        currentItem.id,
+        currentItem.name,
+        currentItem.ingredients
+      );
       if (cancelled) return;
       setIngredients(res.ingredients);
       setExtras(res.extras);
