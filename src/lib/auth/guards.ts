@@ -4,9 +4,18 @@ import { SESSION_COOKIE, SessionUser, verifySessionToken } from "./session";
 
 const ADMIN_PORTAL_ROLES: StaffRole[] = ["admin", "manager"];
 const KITCHEN_ROLES: StaffRole[] = ["cook", "admin", "manager"];
-const FLOOR_ROLES: StaffRole[] = ["waiter", "host", "manager", "admin"];
-const CASHIER_ROLES: StaffRole[] = ["host", "manager", "admin"];
-const STAFF_TERMINAL_ROLES: StaffRole[] = ["waiter", "host", "cook", "cleaner", "manager", "admin"];
+const FLOOR_ROLES: StaffRole[] = ["waiter", "host", "cashier", "manager", "admin"];
+const CASHIER_ROLES: StaffRole[] = ["cashier", "host", "manager", "admin"];
+const STAFF_TERMINAL_ROLES: StaffRole[] = [
+  "waiter",
+  "host",
+  "cashier",
+  "cook",
+  "cleaner",
+  "manager",
+  "admin",
+];
+const ORDER_TAKER_ROLES: StaffRole[] = ["waiter", "host", "cashier", "manager", "admin"];
 
 export async function getVerifiedSession(): Promise<SessionUser | null> {
   const cookieStore = await cookies();
@@ -38,6 +47,10 @@ export async function requireFloorStaff(): Promise<SessionUser | null> {
 
 export async function requireCashier(): Promise<SessionUser | null> {
   return requireRole(CASHIER_ROLES);
+}
+
+export async function requireOrderTaker(): Promise<SessionUser | null> {
+  return requireRole(ORDER_TAKER_ROLES);
 }
 
 export async function requireStaffTerminal(): Promise<SessionUser | null> {

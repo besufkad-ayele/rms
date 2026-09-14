@@ -1,7 +1,15 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
-import { CheckCircle2, CreditCard, Receipt, X } from "lucide-react";
+import React, { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import {
+  CheckCircle2,
+  CreditCard,
+  Plus,
+  Receipt,
+  UtensilsCrossed,
+  X,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 import { getCurrentSessionAction } from "@/app/rms-login/actions";
 import {
@@ -14,19 +22,28 @@ import {
 import { PrintableReceipt } from "@/components/order/PrintableReceipt";
 import { ReceiptData } from "@/lib/receipts";
 
+type CashierTab = "bills" | "tables";
+
 export default function CashierPortalPage() {
   const [sessionUser, setSessionUser] = useState<any>(null);
-  const [tables, setTables] = useState<StaffStationTable[]>([]);
+  const [allTables, setAllTables] = useState<StaffStationTable[]>([]);
+  const [tab, setTab] = useState<CashierTab>("bills");
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [settleTable, setSettleTable] = useState<StaffStationTable | null>(null);
-  const [settleMethod, setSettleMethod] = useState<"cbe_birr" | "telebirr" | "cash" | "card">("cash");
+  const [settleMethod, setSettleMethod] = useState<"cbe_birr" | "telebirr" | "cash" | "card">(
+    "cash"
+  );
   const [settleTxRef, setSettleTxRef] = useState("");
   const [printedReceipt, setPrintedReceipt] = useState<ReceiptData | null>(null);
 
-  // "Check order" popup — item customization detail
   const [checkOrderTable, setCheckOrderTable] = useState<StaffStationTable | null>(null);
   const [orderTicket, setOrderTicket] = useState<OrderTicketDetail | null>(null);
   const [loadingTicket, setLoadingTicket] = useState(false);
+
+  const openBills = useMemo(
+    () => allTables.filter((t) => t.status === "occupied" && t.activeOrderId),
+    [allTables]
+  );
 
   const openCheckOrder = async (table: StaffStationTable) => {
     if (!table.activeOrderId) return;
@@ -45,7 +62,7 @@ export default function CashierPortalPage() {
 
   const loadTables = async () => {
     const res = await getStaffLiveTablesAction(sessionUser?.id, false);
-    setTables((res.tables || []).filter((t) => t.status === "occupied" && t.activeOrderId));
+    setAllTables(res.tables || []);
   };
 
   useEffect(() => {
@@ -97,76 +114,218 @@ export default function CashierPortalPage() {
         </div>
       )}
 
-      <div className="rounded-card bg-white p-6 border border-divider shadow-card">
-        <div className="flex items-center gap-3">
-          <div className="h-10 w-10 rounded-xl bg-brand-primary text-white flex items-center justify-center">
-            <CreditCard className="h-5 w-5" />
+      <div className="rounded-card bg-white p-6 border border-divider shadow-card space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <div className="h-10 w-10 rounded-xl bg-brand-primary text-white flex items-center justify-center">
+              <CreditCard className="h-5 w-5" />
+            </div>
+            <div>
+              <h2 className="font-header text-xl font-bold text-brand-heading">Cashier desk</h2>
+              <p className="text-xs text-brand-secondary">
+                Start table orders, confirm payments, and print receipts.
+                {sessionUser?.fullName ? ` · ${sessionUser.fullName}` : ""}
+              </p>
+            </div>
           </div>
-          <div>
-            <h2 className="font-header text-xl font-bold text-brand-heading">Open bills</h2>
-            <p className="text-xs text-brand-secondary">
-              Confirm guest payments (CBE / Telebirr / cash), print receipts, then clear the table.
-            </p>
+          <div className="flex items-center gap-2 text-xs">
+            <span className="rounded-pill bg-status-occupied/10 text-status-occupied border border-status-occupied/20 px-2.5 py-1 font-bold">
+              {openBills.length} open bills
+            </span>
+            <span className="rounded-pill bg-bg-subtle text-brand-secondary border border-divider px-2.5 py-1 font-bold">
+              {allTables.length} tables
+            </span>
           </div>
+        </div>
+
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={() => setTab("bills")}
+            className={cn(
+              "rounded-button px-3.5 py-1.5 text-xs font-bold border",
+              tab === "bills"
+                ? "bg-brand-primary text-white border-brand-primary"
+                : "bg-bg-subtle text-brand-primary border-divider"
+            )}
+          >
+            Open bills
+          </button>
+          <button
+            type="button"
+            onClick={() => setTab("tables")}
+            className={cn(
+              "rounded-button px-3.5 py-1.5 text-xs font-bold border",
+              tab === "tables"
+                ? "bg-brand-primary text-white border-brand-primary"
+                : "bg-bg-subtle text-brand-primary border-divider"
+            )}
+          >
+            All tables · new order
+          </button>
         </div>
       </div>
 
-      {tables.length === 0 ? (
-        <div className="rounded-card border border-dashed border-divider bg-white p-8 text-center">
-          <Receipt className="mx-auto h-8 w-8 text-brand-secondary opacity-60" />
-          <p className="font-header font-bold text-sm text-brand-primary mt-3">No open bills</p>
-          <p className="text-xs text-brand-secondary mt-1">
-            Occupied tables with unpaid orders appear here after guests notify payment.
-          </p>
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {tables.map((table) => (
-            <div
-              key={table.code}
-              className="rounded-card bg-white p-5 border border-status-occupied/40 shadow-card space-y-3"
+      {tab === "bills" &&
+        (openBills.length === 0 ? (
+          <div className="rounded-card border border-dashed border-divider bg-white p-8 text-center">
+            <Receipt className="mx-auto h-8 w-8 text-brand-secondary opacity-60" />
+            <p className="font-header font-bold text-sm text-brand-primary mt-3">No open bills</p>
+            <p className="text-xs text-brand-secondary mt-1">
+              Start an order from the tables tab, or wait for guest QR orders.
+            </p>
+            <button
+              type="button"
+              onClick={() => setTab("tables")}
+              className="mt-4 rounded-button bg-brand-primary text-white px-4 py-2 text-xs font-bold"
             >
-              <div className="flex items-center justify-between">
-                <div>
-                  <h3 className="font-header text-lg font-bold">Table {table.code}</h3>
-                  <p className="text-[10px] text-brand-secondary">{table.section}</p>
-                </div>
-                <span className="rounded-pill bg-status-occupied text-white px-2.5 py-0.5 text-[10px] font-bold uppercase">
-                  {table.foodStatus || "open"}
-                </span>
-              </div>
-              <p className="text-xs text-brand-secondary line-clamp-2">{table.activeOrder}</p>
-              <button
-                type="button"
-                onClick={() => openCheckOrder(table)}
-                className="w-full py-1.5 rounded-button bg-bg-subtle border border-divider text-brand-primary font-bold text-[11px] hover:bg-bg-card transition flex items-center justify-center gap-1"
+              Browse tables
+            </button>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {openBills.map((table) => (
+              <div
+                key={table.code}
+                className="rounded-card bg-white p-5 border border-status-occupied/40 shadow-card space-y-3"
               >
-                <Receipt className="h-3.5 w-3.5 text-brand-accent" />
-                <span>Check order &amp; customizations</span>
-              </button>
-              <div className="flex items-center justify-between pt-2 border-t border-divider">
-                <div>
-                  <p className="text-[10px] uppercase text-brand-secondary">Amount due</p>
-                  <p className="font-header text-base font-bold">
-                    ETB {(table.billTotal || 0).toLocaleString()}
-                  </p>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="font-header text-lg font-bold">Table {table.code}</h3>
+                    <p className="text-[10px] text-brand-secondary">{table.section}</p>
+                  </div>
+                  <span className="rounded-pill bg-status-occupied text-white px-2.5 py-0.5 text-[10px] font-bold uppercase">
+                    {table.foodStatus || "open"}
+                  </span>
                 </div>
+                <p className="text-xs text-brand-secondary line-clamp-2">{table.activeOrder}</p>
                 <button
                   type="button"
-                  onClick={() => {
-                    setSettleTable(table);
-                    if (table.pendingPayMethod === "cbe_birr" || table.pendingPayMethod === "telebirr") {
-                      setSettleMethod(table.pendingPayMethod);
-                    }
-                    setSettleTxRef(table.pendingPayAccount || "");
-                  }}
-                  className="rounded-button bg-status-free px-3.5 py-1.5 text-xs font-bold text-white"
+                  onClick={() => openCheckOrder(table)}
+                  className="w-full py-1.5 rounded-button bg-bg-subtle border border-divider text-brand-primary font-bold text-[11px] hover:bg-bg-card transition flex items-center justify-center gap-1"
                 >
-                  Confirm & print
+                  <Receipt className="h-3.5 w-3.5 text-brand-accent" />
+                  <span>Check order &amp; customizations</span>
                 </button>
+                <Link
+                  href={`/cashier/order/${table.code}`}
+                  className="w-full py-1.5 rounded-button bg-brand-accent/10 border border-brand-accent/30 text-brand-accent font-bold text-[11px] hover:bg-brand-accent/20 transition flex items-center justify-center gap-1"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  Add items
+                </Link>
+                <div className="flex items-center justify-between pt-2 border-t border-divider">
+                  <div>
+                    <p className="text-[10px] uppercase text-brand-secondary">Amount due</p>
+                    <p className="font-header text-base font-bold">
+                      ETB {(table.billTotal || 0).toLocaleString()}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSettleTable(table);
+                      if (
+                        table.pendingPayMethod === "cbe_birr" ||
+                        table.pendingPayMethod === "telebirr"
+                      ) {
+                        setSettleMethod(table.pendingPayMethod);
+                      }
+                      setSettleTxRef(table.pendingPayAccount || "");
+                    }}
+                    className="rounded-button bg-status-free px-3.5 py-1.5 text-xs font-bold text-white"
+                  >
+                    Confirm & print
+                  </button>
+                </div>
               </div>
-            </div>
-          ))}
+            ))}
+          </div>
+        ))}
+
+      {tab === "tables" && (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {allTables.map((table) => {
+            const isOccupied = table.status === "occupied";
+            return (
+              <div
+                key={table.code}
+                className={cn(
+                  "rounded-card bg-white p-5 border shadow-card space-y-3",
+                  isOccupied ? "border-status-occupied/40" : "border-divider"
+                )}
+              >
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="font-header text-lg font-bold">Table {table.code}</h3>
+                    <p className="text-[10px] text-brand-secondary">{table.section}</p>
+                  </div>
+                  <span
+                    className={cn(
+                      "rounded-pill px-2.5 py-0.5 text-[10px] font-bold uppercase text-white",
+                      isOccupied ? "bg-status-occupied" : "bg-status-free"
+                    )}
+                  >
+                    {table.status}
+                  </span>
+                </div>
+
+                {isOccupied ? (
+                  <>
+                    <p className="text-xs text-brand-secondary line-clamp-2">
+                      {table.activeOrder || "Occupied — no item summary"}
+                    </p>
+                    <p className="font-header text-sm font-bold">
+                      ETB {(table.billTotal || 0).toLocaleString()}
+                    </p>
+                  </>
+                ) : (
+                  <p className="text-xs text-brand-secondary">
+                    Free · capacity {table.capacity || 4} · ready for a new ticket
+                  </p>
+                )}
+
+                <Link
+                  href={`/cashier/order/${table.code}`}
+                  className="w-full py-2 rounded-button bg-brand-primary text-white font-bold text-xs hover:opacity-90 transition flex items-center justify-center gap-1.5"
+                >
+                  {isOccupied ? (
+                    <>
+                      <Plus className="h-3.5 w-3.5" />
+                      Add items to table
+                    </>
+                  ) : (
+                    <>
+                      <UtensilsCrossed className="h-3.5 w-3.5" />
+                      Start order for table
+                    </>
+                  )}
+                </Link>
+
+                {isOccupied && table.activeOrderId && (
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => openCheckOrder(table)}
+                      className="py-1.5 rounded-button bg-bg-subtle border border-divider text-[11px] font-bold"
+                    >
+                      Details
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSettleTable(table);
+                        setSettleTxRef(table.pendingPayAccount || "");
+                      }}
+                      className="py-1.5 rounded-button bg-status-free text-white text-[11px] font-bold"
+                    >
+                      Settle
+                    </button>
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
 
@@ -199,9 +358,7 @@ export default function CashierPortalPage() {
             </div>
 
             {loadingTicket ? (
-              <div className="py-10 text-center text-xs text-brand-secondary">
-                Loading order…
-              </div>
+              <div className="py-10 text-center text-xs text-brand-secondary">Loading order…</div>
             ) : !orderTicket || orderTicket.items.length === 0 ? (
               <div className="py-10 text-center text-xs text-brand-secondary">
                 No items found for this order.
@@ -228,9 +385,7 @@ export default function CashierPortalPage() {
                         <span className="h-6 w-6 rounded-pill bg-brand-accent text-white font-bold text-xs flex items-center justify-center shrink-0">
                           {item.qty}x
                         </span>
-                        <span className="font-bold text-sm text-brand-heading">
-                          {item.name}
-                        </span>
+                        <span className="font-bold text-sm text-brand-heading">{item.name}</span>
                       </div>
 
                       {item.omittedIngredients.length > 0 && (
@@ -277,16 +432,24 @@ export default function CashierPortalPage() {
               </div>
             )}
 
-            <button
-              type="button"
-              onClick={() => {
-                setCheckOrderTable(null);
-                setOrderTicket(null);
-              }}
-              className="w-full py-2.5 rounded-button bg-brand-primary text-white font-bold text-xs hover:bg-brand-heading transition"
-            >
-              Close
-            </button>
+            <div className="grid grid-cols-2 gap-2">
+              <Link
+                href={`/cashier/order/${checkOrderTable.code}`}
+                className="py-2.5 rounded-button bg-brand-accent text-white font-bold text-xs text-center"
+              >
+                Add items
+              </Link>
+              <button
+                type="button"
+                onClick={() => {
+                  setCheckOrderTable(null);
+                  setOrderTicket(null);
+                }}
+                className="py-2.5 rounded-button bg-brand-primary text-white font-bold text-xs"
+              >
+                Close
+              </button>
+            </div>
           </div>
         </div>
       )}

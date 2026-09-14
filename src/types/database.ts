@@ -1,5 +1,5 @@
 export type EmploymentStatus = "active" | "on_leave" | "terminated";
-export type StaffRole = "waiter" | "cook" | "cleaner" | "host" | "manager" | "admin";
+export type StaffRole = "waiter" | "cook" | "cleaner" | "host" | "cashier" | "manager" | "admin";
 export type ShiftStatus = "scheduled" | "checked_in" | "completed" | "missed" | "late";
 export type TableStatus = "free" | "occupied" | "reserved";
 export type IngredientUnit = "gram" | "ml" | "piece";

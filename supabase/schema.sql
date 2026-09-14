@@ -15,7 +15,7 @@ EXCEPTION
 END $$;
 
 DO $$ BEGIN
-    CREATE TYPE staff_role_enum AS ENUM ('waiter', 'cook', 'cleaner', 'host', 'manager', 'admin');
+    CREATE TYPE staff_role_enum AS ENUM ('waiter', 'cook', 'cleaner', 'host', 'cashier', 'manager', 'admin');
 EXCEPTION
     WHEN duplicate_object THEN null;
 END $$;

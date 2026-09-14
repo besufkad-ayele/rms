@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient as createServerClient } from "@/lib/supabase/server";
-import { requireFloorStaff, UNAUTHORIZED } from "@/lib/auth/guards";
+import { requireFloorStaff, requireOrderTaker, UNAUTHORIZED } from "@/lib/auth/guards";
 import { computeBill } from "@/lib/utils";
 import { formatKitchenNotes, extrasTotal } from "@/lib/kitchen-notes";
 import { issueReceiptNumber, loadReceiptForOrder } from "@/lib/receipts-server";
@@ -14,6 +14,7 @@ import {
 } from "@/types/order-customization";
 import { logTableServiceEvent } from "@/lib/table-service-analytics";
 import { upsertCustomerByPhone } from "@/lib/customers-server";
+import { OrderChannel } from "@/types/database";
 
 const DEFAULT_RESTAURANT_ID = "00000000-0000-0000-0000-000000000001";
 
@@ -393,6 +394,75 @@ export async function submitOrderAction(
   } catch (err) {
     console.error("Order submission exception:", err);
     return { success: false, message: "Database connection failed during order." };
+  }
+}
+
+/**
+ * Staff (waiter / cashier / host / manager) place or append items for a table.
+ * Claims the table to the current staff member when it is unassigned.
+ */
+export async function submitStaffOrderForTableAction(
+  tableCode: string,
+  items: CustomerOrderItemInput[],
+  customerNote?: string,
+  channel: OrderChannel = "dine_in"
+) {
+  const session = await requireOrderTaker();
+  if (!session) return UNAUTHORIZED;
+
+  if (!items || items.length === 0) {
+    return { success: false, message: "Cart is empty." };
+  }
+
+  try {
+    const supabase = await getSupabase();
+    const cleanCode = tableCode.trim().toUpperCase();
+    const { data: tableData } = await supabase
+      .from("tables")
+      .select("id, assigned_staff_id, current_order_id, status")
+      .or(`unique_code.eq.${cleanCode},unique_code.eq.${tableCode}`)
+      .maybeSingle();
+
+    if (!tableData?.id) {
+      return { success: false, message: "Unknown table code." };
+    }
+
+    // Assign floor ownership when starting or adding for an unclaimed table
+    if (!tableData.assigned_staff_id) {
+      await supabase
+        .from("tables")
+        .update({ assigned_staff_id: session.id })
+        .eq("id", tableData.id);
+      tableData.assigned_staff_id = session.id;
+    }
+
+    const result = await submitOrderAction(tableCode, items, customerNote);
+    if (!result.success) return result;
+
+    // Prefer the logged-in staff on new tickets when the table had no waiter yet
+    if (!result.appended && result.orderId) {
+      await supabase
+        .from("orders")
+        .update({
+          staff_id: tableData.assigned_staff_id || session.id,
+          channel,
+        })
+        .eq("id", result.orderId);
+    }
+
+    revalidatePath("/staff/dashboard");
+    revalidatePath("/cashier");
+    revalidatePath(`/staff/order/${cleanCode}`);
+
+    return {
+      ...result,
+      message: result.appended
+        ? `Items added to table ${cleanCode}.`
+        : `Order started for table ${cleanCode}.`,
+    };
+  } catch (err) {
+    console.error("submitStaffOrderForTableAction:", err);
+    return { success: false, message: "Could not place staff order." };
   }
 }
 

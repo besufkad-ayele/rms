@@ -24,7 +24,7 @@ export default function CashierLayout({ children }: { children: React.ReactNode 
             <h1 className="font-header font-bold text-sm text-brand-heading leading-tight">
               Cashier Portal
             </h1>
-            <p className="text-[10px] text-brand-secondary">Confirm payments & print receipts</p>
+            <p className="text-[10px] text-brand-secondary">Payments, receipts & table orders</p>
           </div>
         </div>
 

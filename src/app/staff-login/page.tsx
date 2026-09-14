@@ -90,6 +90,8 @@ export default function StaffSharedTabletLoginPage() {
         return "bg-status-free text-white";
       case "host":
         return "bg-status-occupied text-white";
+      case "cashier":
+        return "bg-brand-primary text-white";
       default:
         return "bg-bg-card text-brand-primary border border-divider";
     }

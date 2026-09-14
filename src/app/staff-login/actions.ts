@@ -34,6 +34,7 @@ function destinationForStaff(staff: Staff): string {
       : "/admin/dashboard";
   }
   if (staff.role === "cook") return "/chef/dashboard";
+  if (staff.role === "cashier" || staff.role === "host") return "/cashier";
   return "/staff/dashboard";
 }
 

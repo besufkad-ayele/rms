@@ -483,6 +483,14 @@ export default function StaffDashboardPage() {
                             <span>Check order &amp; customizations</span>
                           </button>
 
+                          <Link
+                            href={`/staff/order/${table.code}`}
+                            className="w-full mt-1 py-1.5 rounded-button bg-brand-accent/10 border border-brand-accent/30 text-brand-accent font-bold text-[11px] hover:bg-brand-accent/20 transition flex items-center justify-center gap-1"
+                          >
+                            <Plus className="h-3.5 w-3.5" />
+                            <span>Add items to order</span>
+                          </Link>
+
                           {table.foodStatus !== "served" && (
                             <button
                               type="button"
@@ -515,19 +523,28 @@ export default function StaffDashboardPage() {
                         <p className="text-xs text-brand-secondary">
                           Table is free and sanitized for next dining guests.
                         </p>
-                        {!table.assignedStaffId && (
-                          <button
-                            type="button"
-                            onClick={async () => {
-                              await claimTableAction(table.code, staffId);
-                              showToast(`Table ${table.code} claimed to your station!`);
-                              await loadTables();
-                            }}
-                            className="rounded-button bg-brand-accent/10 hover:bg-brand-accent/20 text-brand-accent border border-brand-accent/30 px-3 py-1 text-xs font-bold transition"
+                        <div className="flex flex-col items-center gap-2">
+                          {!table.assignedStaffId && (
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                await claimTableAction(table.code, staffId);
+                                showToast(`Table ${table.code} claimed to your station!`);
+                                await loadTables();
+                              }}
+                              className="rounded-button bg-brand-accent/10 hover:bg-brand-accent/20 text-brand-accent border border-brand-accent/30 px-3 py-1 text-xs font-bold transition"
+                            >
+                              + Claim Table
+                            </button>
+                          )}
+                          <Link
+                            href={`/staff/order/${table.code}`}
+                            className="rounded-button bg-brand-primary text-white px-3 py-1.5 text-xs font-bold hover:opacity-90 transition inline-flex items-center gap-1"
                           >
-                            + Claim Table
-                          </button>
-                        )}
+                            <UtensilsCrossed className="h-3.5 w-3.5" />
+                            Start order for table
+                          </Link>
+                        </div>
                       </div>
                     )}
                   </div>

@@ -27,10 +27,8 @@ export async function middleware(request: NextRequest) {
   }
 
   if (pathname.startsWith("/cashier")) {
-    if (
-      !session ||
-      (session.role !== "host" && session.role !== "admin" && session.role !== "manager")
-    ) {
+    const cashierRoles = ["cashier", "host", "admin", "manager"];
+    if (!session || !cashierRoles.includes(session.role)) {
       const url = new URL("/staff-login", request.url);
       url.searchParams.set("redirect", pathname);
       return NextResponse.redirect(url);

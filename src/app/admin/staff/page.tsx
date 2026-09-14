@@ -292,7 +292,7 @@ export default function StaffPage() {
           {/* Filter Bar */}
           <div className="p-4 border-b border-divider flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-bg-subtle/60">
             <div className="flex items-center gap-1 overflow-x-auto pb-1 sm:pb-0">
-              {["all", "admin", "manager", "waiter", "cook", "cleaner"].map((role) => (
+              {["all", "admin", "manager", "waiter", "cashier", "cook", "cleaner", "host"].map((role) => (
                 <button
                   key={role}
                   onClick={() => setActiveFilter(role)}
@@ -362,6 +362,8 @@ export default function StaffPage() {
                               ? "bg-status-reserved-bg text-status-reserved"
                               : staff.role === "waiter"
                               ? "bg-status-occupied-bg text-status-occupied"
+                              : staff.role === "cashier"
+                              ? "bg-status-free-bg text-status-free"
                               : staff.role === "cook"
                               ? "bg-status-prep-bg text-status-prep"
                               : "bg-bg-active text-brand-primary"
@@ -866,6 +868,7 @@ export default function StaffPage() {
                     className="w-full px-3 py-2 rounded-button bg-bg-subtle border border-divider text-xs text-brand-primary focus:ring-1 focus:ring-brand-accent capitalize"
                   >
                     <option value="waiter">Waiter / Attendant</option>
+                    <option value="cashier">Cashier</option>
                     <option value="cook">Kitchen Cook / Chef</option>
                     <option value="manager">Operational Manager</option>
                     <option value="cleaner">Facility Cleaner</option>
@@ -958,6 +961,7 @@ export default function StaffPage() {
                   className="w-full px-3 py-2 rounded-button bg-bg-subtle border border-divider text-xs text-brand-primary capitalize"
                 >
                   <option value="waiter">Waiter</option>
+                  <option value="cashier">Cashier</option>
                   <option value="cook">Cook</option>
                   <option value="manager">Manager</option>
                   <option value="cleaner">Cleaner</option>
