@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient as createServerClient } from "@/lib/supabase/server";
+import { requireAdminPortal, UNAUTHORIZED } from "@/lib/auth/guards";
 
 async function getSupabase() {
   try {
@@ -75,6 +76,28 @@ export async function getReviewsData(): Promise<{
   leaderboard: StaffPerformanceCard[];
   feedbacks: DetailedReviewItem[];
 }> {
+  const session = await requireAdminPortal();
+  if (!session) {
+    return {
+      summary: {
+        avgWeightedScore: 0,
+        totalReviews: 0,
+        redirectedToGoogleCount: 0,
+        googleConversionPercent: 0,
+        internalResolutionCount: 0,
+        avgFoodScore: 0,
+        avgFriendlinessScore: 0,
+        avgPromptnessScore: 0,
+        avgSpeedScore: 0,
+        avgAmbienceScore: 0,
+        fiveStarCount: 0,
+        criticalCount: 0,
+      },
+      leaderboard: [],
+      feedbacks: [],
+    };
+  }
+
   try {
     const supabase = await getSupabase();
 
@@ -313,6 +336,9 @@ export async function getReviewsData(): Promise<{
 }
 
 export async function resolveComplaintAction(feedbackId: string) {
+  const session = await requireAdminPortal();
+  if (!session) return UNAUTHORIZED;
+
   try {
     const supabase = await getSupabase();
     await supabase.from("feedback").update({ redirected_to_google: true }).eq("id", feedbackId);

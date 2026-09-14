@@ -4,16 +4,8 @@ import React, { useState, useMemo, useEffect, use } from "react";
 import Link from "next/link";
 import {
   Search,
-  ShoppingBag,
   ArrowLeft,
-  Sparkles,
-  UtensilsCrossed,
   X,
-  Flame,
-  Check,
-  RotateCcw,
-  CheckCircle2,
-  Receipt,
   UserCheck,
 } from "lucide-react";
 import {
@@ -21,23 +13,62 @@ import {
   MENU_CATEGORIES,
   getTableDetails,
   MenuItemData,
-  RESTAURANT_INFO,
 } from "@/data/mockMenu";
 import { CategoryTabs } from "@/components/menu/CategoryTabs";
 import { DishCard } from "@/components/menu/DishCard";
 import { DishDetailModal } from "@/components/menu/DishDetailModal";
 import { CartDrawer, CartItem } from "@/components/order/CartDrawer";
+import { GuestPaymentPanel } from "@/components/order/GuestPaymentPanel";
 import { OrderStatusStepper, FlowOrderStatus } from "@/components/order/OrderStatusStepper";
-import { submitOrderAction, submitPaymentAction, submitFeedbackAction, getOrderStatusAction, getTableByCodeAction } from "./actions";
+import {
+  submitOrderAction,
+  submitPaymentAction,
+  submitFeedbackAction,
+  getOrderStatusAction,
+  getTableByCodeAction,
+  getActiveTableOrderAction,
+  GuestActiveOrder,
+} from "./actions";
+import { formatKitchenNotes } from "@/lib/kitchen-notes";
+import { ItemCustomization } from "@/types/order-customization";
 import { getMenuItemsAction } from "@/app/admin/menu/actions";
-import { PaymentMethodCard, PaymentMethod } from "@/components/order/PaymentMethodCard";
 import { RatingStep } from "@/components/order/RatingStep";
+import { ActiveOrderBanner } from "@/components/order/ActiveOrderBanner";
 import { ToastProvider, useToast } from "@/components/ui/Toast";
-import { formatETB, cn } from "@/lib/utils";
+import { computeBill, formatETB } from "@/lib/utils";
 import { useOfflineSync } from "@/context/OfflineSyncContext";
 
 interface PageProps {
   params: Promise<{ tableCode: string }>;
+}
+
+function toCartItems(order: GuestActiveOrder): CartItem[] {
+  return order.items.map((it, index) => ({
+    cartId: `${it.menuItemId}-${index}`,
+    item: {
+      id: it.menuItemId,
+      name: it.name,
+      category: "mains",
+      description: "",
+      price: it.price,
+      photoUrl: it.photoUrl || "",
+      isAvailable: true,
+      status: "available" as const,
+      preparationMinutes: 15,
+      ingredients: [],
+    },
+    quantity: it.quantity,
+    lineUnitPrice: it.price,
+  }));
+}
+
+function customizationKey(customization?: ItemCustomization) {
+  if (!customization) return "";
+  return JSON.stringify(customization);
+}
+
+function cartLineSubtotal(ci: CartItem) {
+  return ci.lineUnitPrice * ci.quantity;
 }
 
 function OrderFlowContent({ tableCode }: { tableCode: string }) {
@@ -65,9 +96,45 @@ function OrderFlowContent({ tableCode }: { tableCode: string }) {
     loadLiveTable();
   }, [tableCode]);
 
-  // Flow Stages: "browsing" | "order_placed" | "payment" | "feedback"
-  const [flowStage, setFlowStage] = useState<"browsing" | "order_placed" | "payment" | "feedback">("browsing");
+  const applyOpenOrder = (open: GuestActiveOrder) => {
+    setActiveOrderId(open.orderId);
+    setOrderNum(open.orderNumber);
+    setPlacedOrderItems(toCartItems(open));
+    setHasOpenOrder(true);
+    setHasPendingPayment(!!open.hasPendingPayment);
+    setOpenOrderSubtotal(open.foodSubtotal);
+    if (
+      open.status === "placed" ||
+      open.status === "preparing" ||
+      open.status === "ready" ||
+      open.status === "served"
+    ) {
+      setOrderStatus(open.status);
+    }
+  };
+
+  useEffect(() => {
+    let cancelled = false;
+    async function restoreOpenOrder() {
+      const open = await getActiveTableOrderAction(tableCode);
+      if (cancelled || !open) return;
+      applyOpenOrder(open);
+      setFlowStage((current) => (current === "feedback" ? current : "browsing"));
+    }
+    restoreOpenOrder();
+    return () => {
+      cancelled = true;
+    };
+  }, [tableCode]);
+
+  const [flowStage, setFlowStage] = useState<
+    "browsing" | "order_placed" | "payment" | "feedback"
+  >("browsing");
   const [orderStatus, setOrderStatus] = useState<FlowOrderStatus>("placed");
+  const [hasOpenOrder, setHasOpenOrder] = useState(false);
+  const [hasPendingPayment, setHasPendingPayment] = useState(false);
+  const [isProcessingPayment, setIsProcessingPayment] = useState(false);
+  const [openOrderSubtotal, setOpenOrderSubtotal] = useState(0);
 
   // Menu filtering & search
   const [selectedCategory, setSelectedCategory] = useState<string>("all");
@@ -78,24 +145,32 @@ function OrderFlowContent({ tableCode }: { tableCode: string }) {
   // Cart state
   const [cartItems, setCartItems] = useState<CartItem[]>([]);
   const [isSubmittingOrder, setIsSubmittingOrder] = useState<boolean>(false);
-  const [isProcessingPayment, setIsProcessingPayment] = useState<boolean>(false);
 
   // Placed Order Details
   const [placedOrderItems, setPlacedOrderItems] = useState<CartItem[]>([]);
-  const [orderNum, setOrderNum] = useState<string>(() => `ORD-${Math.floor(100 + Math.random() * 900)}`);
+  const [orderNum, setOrderNum] = useState<string>("");
   const [customerNote, setCustomerNote] = useState<string>("");
   const [activeOrderId, setActiveOrderId] = useState<string>("");
 
-  // Cart Helpers
   const handleAddToCart = (item: MenuItemData) => {
     setCartItems((prev) => {
-      const existing = prev.find((ci) => ci.item.id === item.id);
+      const existing = prev.find(
+        (ci) => ci.item.id === item.id && customizationKey(ci.customization) === ""
+      );
       if (existing) {
         return prev.map((ci) =>
-          ci.item.id === item.id ? { ...ci, quantity: ci.quantity + 1 } : ci
+          ci.cartId === existing.cartId ? { ...ci, quantity: ci.quantity + 1 } : ci
         );
       }
-      return [...prev, { item, quantity: 1 }];
+      return [
+        ...prev,
+        {
+          cartId: `${item.id}-${Date.now()}`,
+          item,
+          quantity: 1,
+          lineUnitPrice: item.price,
+        },
+      ];
     });
     toast({
       title: `Added ${item.name}`,
@@ -104,35 +179,79 @@ function OrderFlowContent({ tableCode }: { tableCode: string }) {
     });
   };
 
-  const handleUpdateQuantity = (itemId: string, delta: number) => {
+  const handleDetailAddToCart = (
+    item: MenuItemData,
+    customization?: ItemCustomization,
+    lineTotal?: number
+  ) => {
+    const unitPrice = lineTotal ?? item.price;
+    const key = customizationKey(customization);
     setCartItems((prev) => {
-      return prev
-        .map((ci) => {
-          if (ci.item.id === itemId) {
-            const nextQty = ci.quantity + delta;
-            return nextQty > 0 ? { ...ci, quantity: nextQty } : null;
-          }
-          return ci;
-        })
-        .filter(Boolean) as CartItem[];
+      const existing = prev.find(
+        (ci) => ci.item.id === item.id && customizationKey(ci.customization) === key
+      );
+      if (existing) {
+        return prev.map((ci) =>
+          ci.cartId === existing.cartId ? { ...ci, quantity: ci.quantity + 1 } : ci
+        );
+      }
+      return [
+        ...prev,
+        {
+          cartId: `${item.id}-${Date.now()}`,
+          item,
+          quantity: 1,
+          lineUnitPrice: unitPrice,
+          customization,
+        },
+      ];
+    });
+    toast({
+      title: `Added ${item.name}`,
+      description: `${formatETB(unitPrice)} added to Table ${table.displayNumber} order`,
+      type: "success",
     });
   };
 
-  const handleUpdateInstructions = (itemId: string, instructions: string) => {
+  const handleUpdateQuantity = (cartId: string, delta: number) => {
+    setCartItems((prev) =>
+      prev
+        .map((ci) => {
+          if (ci.cartId !== cartId) return ci;
+          const nextQty = ci.quantity + delta;
+          return nextQty > 0 ? { ...ci, quantity: nextQty } : null;
+        })
+        .filter(Boolean) as CartItem[]
+    );
+  };
+
+  const handleRemoveItem = (cartId: string) => {
+    setCartItems((prev) => prev.filter((ci) => ci.cartId !== cartId));
+  };
+
+  const handleUpdateCustomization = (
+    cartId: string,
+    customization: ItemCustomization,
+    lineUnitPrice: number
+  ) => {
     setCartItems((prev) =>
       prev.map((ci) =>
-        ci.item.id === itemId ? { ...ci, specialInstructions: instructions } : ci
+        ci.cartId === cartId ? { ...ci, customization, lineUnitPrice } : ci
       )
     );
-    toast({
-      title: "Chef Note Saved",
-      description: `Special instruction recorded for item`,
-      type: "info",
-    });
   };
 
-  const handleRemoveItem = (itemId: string) => {
-    setCartItems((prev) => prev.filter((ci) => ci.item.id !== itemId));
+  const handleDishCardRemove = (itemId: string) => {
+    setCartItems((prev) => {
+      const idx = [...prev].reverse().findIndex((ci) => ci.item.id === itemId);
+      if (idx < 0) return prev;
+      const realIdx = prev.length - 1 - idx;
+      const target = prev[realIdx];
+      if (target.quantity <= 1) return prev.filter((_, i) => i !== realIdx);
+      return prev.map((ci, i) =>
+        i === realIdx ? { ...ci, quantity: ci.quantity - 1 } : ci
+      );
+    });
   };
 
   // Place Order Action (Database & Offline Integration)
@@ -143,21 +262,30 @@ function OrderFlowContent({ tableCode }: { tableCode: string }) {
     const formattedItems = cartItems.map((ci) => ({
       menuItemId: ci.item.id,
       title: ci.item.name,
-      price: ci.item.price,
+      price: ci.lineUnitPrice,
       quantity: ci.quantity,
+      customization: ci.customization,
     }));
 
     if (isOnline) {
       try {
         const res = await submitOrderAction(tableCode, formattedItems, customerNote);
         if (res.success && res.orderId) {
-          setActiveOrderId(res.orderId);
-          setOrderNum(res.orderNumber || `#KD-${res.orderId.substring(0, 5).toUpperCase()}`);
+          const open = await getActiveTableOrderAction(tableCode);
+          if (open) applyOpenOrder(open);
+          else {
+            setActiveOrderId(res.orderId);
+            setOrderNum(res.orderNumber || `#KD-${res.orderId.substring(0, 5).toUpperCase()}`);
+            setHasOpenOrder(true);
+            setOrderStatus("placed");
+            if (typeof res.totalAmount === "number") setOpenOrderSubtotal(res.totalAmount);
+          }
+          await refreshOpenOrder();
+          setCartItems([]);
           setFlowStage("order_placed");
-          setOrderStatus("placed");
           toast({
-            title: "Order Sent to Kitchen & Saved to Database",
-            description: `Order ${res.orderNumber} for Table ${table.displayNumber} is now live in the kitchen!`,
+            title: res.appended ? "Added to your open order" : "Order sent to kitchen",
+            description: `Order ${res.orderNumber} for Table ${table.displayNumber} stays open until the cashier clears it.`,
             type: "success",
           });
           setIsSubmittingOrder(false);
@@ -187,14 +315,18 @@ function OrderFlowContent({ tableCode }: { tableCode: string }) {
         type: "info",
       });
     } else if (syncRes.success) {
+      const generatedNum = orderNum || `#ORD-${Date.now().toString().slice(-4)}`;
+      setOrderNum(generatedNum);
       setFlowStage("order_placed");
       setOrderStatus("placed");
       toast({
         title: "Order Saved to Database & Sent to Kitchen",
-        description: `Order ${orderNum} for Table ${table.displayNumber} is live!`,
+        description: `Order ${generatedNum} for Table ${table.displayNumber} is live!`,
         type: "success",
       });
     } else {
+      const fallbackNum = orderNum || `#ORD-${Date.now().toString().slice(-4)}`;
+      setOrderNum(fallbackNum);
       toast({
         title: "Order Saved Offline",
         description: syncRes.message || "Saved to local terminal queue.",
@@ -205,54 +337,60 @@ function OrderFlowContent({ tableCode }: { tableCode: string }) {
     }
   };
 
-  // Payment Confirmation Action (Database & Offline Integration)
-  const handlePaymentConfirmed = async (method: PaymentMethod, reference?: string) => {
-    setIsProcessingPayment(true);
-    const subtotal = placedOrderItems.reduce((acc, ci) => acc + ci.item.price * ci.quantity, 0);
-    const totalAmount = Math.round(subtotal * 1.15 * 1.1);
-
-    if (isOnline && activeOrderId) {
-      try {
-        const res = await submitPaymentAction(activeOrderId, tableCode, method as any, totalAmount);
-        if (res.success) {
-          setIsProcessingPayment(false);
-          setFlowStage("feedback");
-          toast({
-            title: "Payment Settled & Saved to Database",
-            description: `Thank you! Bill settled via ${method.replace("_", " ").toUpperCase()}. Table marked free.`,
-            type: "success",
-          });
-          return;
-        }
-      } catch (err) {
-        console.warn("Direct payment failed, falling back to queue:", err);
-      }
-    }
-
-    const syncRes = await enqueueAndSyncIfOnline("PROCESS_PAYMENT", {
-      orderId: activeOrderId,
-      tableCode,
-      method,
-      amount: totalAmount,
-    });
-
-    setIsProcessingPayment(false);
-    setFlowStage("feedback");
-    toast({
-      title: syncRes.offlineQueued ? "Payment Stored Offline" : "Payment Settled & Saved to Database",
-      description: syncRes.offlineQueued
-        ? "Payment queued in local database. Will auto-sync when online."
-        : `Thank you! Bill settled via ${method.replace("_", " ").toUpperCase()}. Table marked free.`,
-      type: syncRes.offlineQueued ? "info" : "success",
-    });
+  const handleAddMoreDishes = () => {
+    setFlowStage("browsing");
   };
 
-  // Reset Session (for demo)
-  const handleResetSession = () => {
-    setFlowStage("browsing");
-    setOrderStatus("placed");
-    setCartItems([]);
-    setPlacedOrderItems([]);
+  const handleGuestPayment = async (
+    method: "cbe_birr" | "telebirr",
+    payAccount: string,
+    tipAmount: number,
+    phone: string,
+    name: string
+  ) => {
+    if (!activeOrderId) return;
+    setIsProcessingPayment(true);
+    const subtotal =
+      openOrderSubtotal ||
+      placedOrderItems.reduce((sum, i) => sum + cartLineSubtotal(i), 0);
+    const total = computeBill(subtotal).total + tipAmount;
+    try {
+      const res = await submitPaymentAction(
+        activeOrderId,
+        tableCode,
+        method,
+        total,
+        payAccount,
+        tipAmount,
+        phone || undefined,
+        name || undefined
+      );
+      if (res.success) {
+        setHasPendingPayment(true);
+        setFlowStage("order_placed");
+        toast({
+          title: "Payment submitted",
+          description: res.message,
+          type: "success",
+        });
+      } else {
+        toast({
+          title: "Payment not recorded",
+          description: res.message || "Please try again.",
+          type: "error",
+        });
+      }
+    } finally {
+      setIsProcessingPayment(false);
+    }
+  };
+
+  const refreshOpenOrder = async () => {
+    const open = await getActiveTableOrderAction(tableCode);
+    if (open) {
+      applyOpenOrder(open);
+      setOpenOrderSubtotal(open.foodSubtotal);
+    }
   };
 
   const [liveMenuItems, setLiveMenuItems] = useState<MenuItemData[]>([]);
@@ -283,19 +421,42 @@ function OrderFlowContent({ tableCode }: { tableCode: string }) {
     loadDishes();
   }, []);
 
-  // Live polling for order status updates from Kitchen Display System (KDS)
   useEffect(() => {
-    if (!activeOrderId || flowStage !== "order_placed") return;
+    if (!activeOrderId) return;
 
-    const interval = setInterval(async () => {
-      const res = await getOrderStatusAction(activeOrderId);
-      if (res && res.status) {
+    const tick = async () => {
+      const [res, open] = await Promise.all([
+        getOrderStatusAction(activeOrderId),
+        getActiveTableOrderAction(tableCode),
+      ]);
+      if (open) {
+        setHasPendingPayment(!!open.hasPendingPayment);
+        setOpenOrderSubtotal(open.foodSubtotal);
+        setPlacedOrderItems(toCartItems(open));
+      }
+      if (!res?.status) return;
+      if (res.status === "paid" || res.status === "cancelled") {
+        setHasOpenOrder(false);
+        setActiveOrderId("");
+        setHasPendingPayment(false);
+        setFlowStage("feedback");
+        setOrderStatus("served");
+        toast({
+          title: "Table cleared at cashier",
+          description: "Thank you. You can rate your meal below.",
+          type: "success",
+        });
+        return;
+      }
+      if (res.status === "placed" || res.status === "preparing" || res.status === "ready" || res.status === "served") {
         setOrderStatus(res.status);
       }
-    }, 3000);
+    };
 
+    tick();
+    const interval = setInterval(tick, 3000);
     return () => clearInterval(interval);
-  }, [activeOrderId, flowStage]);
+  }, [activeOrderId, tableCode, toast]);
 
   // Filtered dishes
   const filteredDishes = useMemo(() => {
@@ -316,10 +477,11 @@ function OrderFlowContent({ tableCode }: { tableCode: string }) {
   }, [liveMenuItems, selectedCategory, searchQuery]);
 
   const totalCartCount = cartItems.reduce((sum, i) => sum + i.quantity, 0);
-  const totalOrderAmount = (placedOrderItems.length > 0 ? placedOrderItems : cartItems).reduce(
-    (sum, i) => sum + i.item.price * i.quantity,
-    0
-  );
+  const placedSubtotal = placedOrderItems.reduce((sum, i) => sum + cartLineSubtotal(i), 0);
+  const foodSubtotal =
+    openOrderSubtotal > 0 && placedOrderItems.length > 0 ? openOrderSubtotal : placedSubtotal;
+  const bill = computeBill(foodSubtotal);
+  const totalOrderAmount = bill.total;
 
   return (
     <div className="min-h-screen bg-background pb-32 text-brand-primary">
@@ -365,15 +527,13 @@ function OrderFlowContent({ tableCode }: { tableCode: string }) {
               </button>
             )}
 
-            {/* Quick reset for evaluator/demo */}
-            {flowStage !== "browsing" && (
+            {hasOpenOrder && flowStage !== "browsing" && (
               <button
                 type="button"
-                onClick={handleResetSession}
+                onClick={handleAddMoreDishes}
                 className="min-h-[44px] px-3 inline-flex items-center gap-1 rounded-pill bg-background-subtle text-[11px] font-semibold text-brand-secondary hover:text-brand-accent transition border border-divider"
               >
-                <RotateCcw className="h-3 w-3" />
-                <span>New Session</span>
+                <span>Add dishes</span>
               </button>
             )}
           </div>
@@ -407,6 +567,19 @@ function OrderFlowContent({ tableCode }: { tableCode: string }) {
 
       {/* Main Flow Controller */}
       <main className="mx-auto max-w-2xl px-4 sm:px-6 pt-4 space-y-6">
+        {hasOpenOrder && flowStage !== "feedback" && (
+          <ActiveOrderBanner
+            orderNumber={orderNum}
+            status={orderStatus}
+            itemCount={placedOrderItems.reduce((acc, c) => acc + c.quantity, 0)}
+            amountDue={totalOrderAmount}
+            hasPendingPayment={hasPendingPayment}
+            onViewOrder={() => setFlowStage("order_placed")}
+            onAddMore={handleAddMoreDishes}
+            onPay={() => setFlowStage("payment")}
+          />
+        )}
+
         {/* ============================================================ */}
         {/* STAGE 1: BROWSING & CART SELECTION */}
         {/* ============================================================ */}
@@ -424,16 +597,18 @@ function OrderFlowContent({ tableCode }: { tableCode: string }) {
             {/* Vertical Dish Cards List (Mobile-First) */}
             <div className="space-y-3 pt-2">
               {filteredDishes.map((dish) => {
-                const inCart = cartItems.find((ci) => ci.item.id === dish.id);
+                const inCartQty = cartItems
+                  .filter((ci) => ci.item.id === dish.id)
+                  .reduce((sum, ci) => sum + ci.quantity, 0);
                 return (
                   <DishCard
                     key={dish.id}
                     item={dish}
                     mode="order"
                     layout="row"
-                    quantity={inCart?.quantity || 0}
+                    quantity={inCartQty}
                     onAdd={() => handleAddToCart(dish)}
-                    onRemove={() => handleUpdateQuantity(dish.id, -1)}
+                    onRemove={() => handleDishCardRemove(dish.id)}
                     onSelect={(selected) => setSelectedDish(selected)}
                   />
                 );
@@ -445,8 +620,8 @@ function OrderFlowContent({ tableCode }: { tableCode: string }) {
               items={cartItems}
               tableCode={tableCode}
               onUpdateQuantity={handleUpdateQuantity}
-              onUpdateInstructions={handleUpdateInstructions}
               onRemoveItem={handleRemoveItem}
+              onUpdateCustomization={handleUpdateCustomization}
               onPlaceOrder={handlePlaceOrder}
               isSubmitting={isSubmittingOrder}
             />
@@ -478,47 +653,88 @@ function OrderFlowContent({ tableCode }: { tableCode: string }) {
               </div>
 
               <div className="divide-y divide-divider/60 space-y-2 text-xs">
-                {placedOrderItems.map(({ item, quantity, specialInstructions }) => (
-                  <div key={item.id} className="pt-2 first:pt-0 flex justify-between items-start gap-2">
-                    <div>
-                      <p className="font-semibold text-brand-primary">
-                        {quantity}x {item.name}
-                      </p>
-                      {specialInstructions && (
-                        <p className="text-[11px] text-brand-secondary italic">
-                          Note: &ldquo;{specialInstructions}&rdquo;
+                {placedOrderItems.map(({ cartId, item, quantity, lineUnitPrice, customization }) => {
+                  const notes = customization ? formatKitchenNotes(customization) : "";
+                  return (
+                    <div key={cartId} className="pt-2 first:pt-0 flex justify-between items-start gap-2">
+                      <div>
+                        <p className="font-semibold text-brand-primary">
+                          {quantity}x {item.name}
                         </p>
-                      )}
+                        {notes ? (
+                          <p className="text-[11px] text-brand-secondary italic">{notes}</p>
+                        ) : null}
+                      </div>
+                      <span className="font-bold text-brand-primary">
+                        {formatETB(lineUnitPrice * quantity)}
+                      </span>
                     </div>
-                    <span className="font-bold text-brand-primary">
-                      {formatETB(item.price * quantity)}
-                    </span>
-                  </div>
-                ))}
+                  );
+                })}
+              </div>
+              <div className="rounded-button bg-background-subtle p-3 space-y-1.5 text-xs border border-divider">
+                <div className="flex justify-between text-brand-secondary">
+                  <span>Food subtotal</span>
+                  <span>{formatETB(bill.subtotal)}</span>
+                </div>
+                <div className="flex justify-between text-brand-secondary">
+                  <span>Service charge (10%)</span>
+                  <span>{formatETB(bill.serviceCharge)}</span>
+                </div>
+                <div className="flex justify-between text-brand-secondary">
+                  <span>VAT (15%)</span>
+                  <span>{formatETB(bill.vat)}</span>
+                </div>
+                <div className="flex justify-between font-bold text-brand-primary border-t border-divider pt-1.5">
+                  <span>Amount due</span>
+                  <span>{formatETB(bill.total)}</span>
+                </div>
               </div>
             </div>
 
-            {/* Proceed to Payment Button */}
-            <button
-              type="button"
-              onClick={() => setFlowStage("payment")}
-              className="w-full min-h-[48px] inline-flex items-center justify-center gap-2 rounded-button bg-brand-accent px-6 py-3.5 text-sm font-semibold text-white shadow-sm transition hover:bg-brand-accent-hover active:scale-[0.99]"
-            >
-              <Receipt className="h-4 w-4" />
-              <span>Settle Bill & Proceed to Payment ({formatETB(totalOrderAmount)})</span>
-            </button>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={handleAddMoreDishes}
+                className="min-h-[48px] inline-flex items-center justify-center gap-2 rounded-button border border-divider bg-white px-4 py-3.5 text-sm font-semibold text-brand-primary"
+              >
+                Add more dishes
+              </button>
+              <button
+                type="button"
+                onClick={() => setFlowStage("payment")}
+                disabled={hasPendingPayment}
+                className="min-h-[48px] inline-flex items-center justify-center gap-2 rounded-button bg-brand-accent px-4 py-3.5 text-sm font-semibold text-white shadow-sm disabled:opacity-60"
+              >
+                Pay bill
+              </button>
+            </div>
+            {hasPendingPayment ? (
+              <p className="text-center text-[11px] text-brand-accent font-semibold">
+                Payment submitted — cashier will confirm and print your receipt.
+              </p>
+            ) : (
+              <p className="text-center text-[11px] text-brand-secondary">
+                Pay with CBE or Telebirr (QR on next screen). Cashier confirms before your table is cleared.
+              </p>
+            )}
           </div>
         )}
 
-        {/* ============================================================ */}
-        {/* STAGE 3: PAYMENT METHOD SELECTION */}
-        {/* ============================================================ */}
-        {flowStage === "payment" && (
-          <div className="animate-in fade-in duration-300">
-            <PaymentMethodCard
-              totalAmount={totalOrderAmount}
+        {flowStage === "payment" && hasOpenOrder && (
+          <div className="space-y-4 animate-in fade-in duration-300">
+            <button
+              type="button"
+              onClick={() => setFlowStage("order_placed")}
+              className="text-xs font-semibold text-brand-accent"
+            >
+              ← Back to order
+            </button>
+            <GuestPaymentPanel
+              foodSubtotal={foodSubtotal}
               tableCode={tableCode}
-              onPaymentConfirmed={handlePaymentConfirmed}
+              serverName={table.serverName}
+              onSubmit={handleGuestPayment}
               isProcessing={isProcessingPayment}
             />
           </div>
@@ -543,6 +759,7 @@ function OrderFlowContent({ tableCode }: { tableCode: string }) {
                     ambienceRating: data.ambienceRating,
                     comment: data.comment,
                     redirectedToGoogle: data.redirectedToGoogle,
+                    customerPhone: data.customerPhone,
                   });
                   toast({
                     title: "Feedback Recorded",
@@ -563,7 +780,7 @@ function OrderFlowContent({ tableCode }: { tableCode: string }) {
         item={selectedDish}
         isOpen={!!selectedDish}
         onClose={() => setSelectedDish(null)}
-        onAddToCart={(item) => handleAddToCart(item)}
+        onAddToCart={handleDetailAddToCart}
         isOrderMode={flowStage === "browsing"}
       />
     </div>

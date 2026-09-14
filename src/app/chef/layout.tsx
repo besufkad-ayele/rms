@@ -44,11 +44,11 @@ export default function ChefLayout({
                 Admas Kitchen Display (KDS)
               </h1>
               <span className="rounded-pill bg-status-occupied px-2 py-0.2 text-[10px] font-bold text-white uppercase">
-                Live Kitchen
+                TV Display
               </span>
             </div>
             <p className="text-[11px] text-[#92898A]">
-              Head Chef: Kassahun Lemma • Active Station: All Stations
+              View-only kitchen screen • Waiters change ticket status
             </p>
           </div>
         </div>

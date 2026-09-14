@@ -1,31 +1,38 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
+import { SESSION_COOKIE, verifySessionToken } from "@/lib/auth/session";
 
-export function middleware(request: NextRequest) {
+export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
-  const sessionCookie = request.cookies.get("rms_session_user");
+  const session = await verifySessionToken(request.cookies.get(SESSION_COOKIE)?.value);
 
-  // Protect Admin Portal Routes
   if (pathname.startsWith("/admin")) {
-    if (!sessionCookie || !sessionCookie.value) {
+    if (!session || (session.role !== "admin" && session.role !== "manager")) {
       const url = new URL("/rms-login", request.url);
       url.searchParams.set("redirect", pathname);
       return NextResponse.redirect(url);
     }
   }
 
-  // Protect Staff Terminal Routes
   if (pathname.startsWith("/staff") && !pathname.startsWith("/staff-login")) {
-    if (!sessionCookie || !sessionCookie.value) {
-      const url = new URL("/staff-login", request.url);
-      return NextResponse.redirect(url);
+    if (!session) {
+      return NextResponse.redirect(new URL("/staff-login", request.url));
     }
   }
 
-  // Protect Chef KDS Routes
   if (pathname.startsWith("/chef")) {
-    if (!sessionCookie || !sessionCookie.value) {
+    if (!session || (session.role !== "cook" && session.role !== "admin" && session.role !== "manager")) {
+      return NextResponse.redirect(new URL("/staff-login", request.url));
+    }
+  }
+
+  if (pathname.startsWith("/cashier")) {
+    if (
+      !session ||
+      (session.role !== "host" && session.role !== "admin" && session.role !== "manager")
+    ) {
       const url = new URL("/staff-login", request.url);
+      url.searchParams.set("redirect", pathname);
       return NextResponse.redirect(url);
     }
   }
@@ -34,5 +41,5 @@ export function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/admin/:path*", "/staff/:path*", "/chef/:path*"],
+  matcher: ["/admin/:path*", "/staff/:path*", "/chef/:path*", "/cashier/:path*"],
 };

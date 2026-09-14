@@ -1,9 +1,9 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { cookies } from "next/headers";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient as createServerClient } from "@/lib/supabase/server";
+import { requireAdminPortal, requirePermission, UNAUTHORIZED } from "@/lib/auth/guards";
 import {
   TableFloorState,
   LiveKitchenTicket,
@@ -78,27 +78,30 @@ function formatTimeAgo(dateString: string): string {
 }
 
 export async function getDashboardData() {
+  const session = await requireAdminPortal();
+  if (!session) {
+    return {
+      sessionUser: { role: "", fullName: "", email: "" },
+      tables: [],
+      tickets: [],
+      alerts: [],
+      settlements: [],
+      reviews: [],
+      kpis: null,
+      priceRecommendations: [],
+      menuEngineering: [],
+      staffPermissionsList: [],
+    };
+  }
+
   try {
     const supabase = await getSupabase();
 
-    // 0. Active User Session Role Check
-    const cookieStore = await cookies();
-    const sessionCookie = cookieStore.get("rms_session_user")?.value;
-    let sessionUser = {
-      role: "admin", // Default to Owner
-      fullName: "Abebe Kebede (Owner)",
-      email: "owner@tibebrms.com",
+    const sessionUser = {
+      role: session.role,
+      fullName: session.fullName,
+      email: session.email || "",
     };
-    if (sessionCookie) {
-      try {
-        const parsed = JSON.parse(sessionCookie);
-        sessionUser = {
-          role: parsed.role || "admin",
-          fullName: parsed.fullName || "Abebe Kebede (Owner)",
-          email: parsed.email || "owner@tibebrms.com",
-        };
-      } catch (e) {}
-    }
 
     // 1. Fetch Live Tables from Supabase
     const { data: dbTables, error: tablesErr } = await supabase
@@ -495,6 +498,9 @@ export async function getDashboardData() {
 }
 
 export async function approvePriceRecommendationAction(menuItemId: string, newPrice: number) {
+  const session = await requireAdminPortal();
+  if (!session) return UNAUTHORIZED;
+
   try {
     const supabase = await getSupabase();
     await supabase.from("menu_items").update({ price: newPrice }).eq("id", menuItemId);
@@ -512,6 +518,9 @@ export async function updateStaffPermissionAction(
   permissionKey: "can_manage_inventory" | "can_view_finance" | "can_manage_shifts" | "can_manage_staff",
   value: boolean
 ) {
+  const session = await requirePermission("can_manage_staff");
+  if (!session) return UNAUTHORIZED;
+
   try {
     const supabase = await getSupabase();
     const { data: staff } = await supabase.from("staff").select("permissions").eq("id", staffId).single();
@@ -536,6 +545,9 @@ export async function updateTableStatusAction(
   guestCount?: number,
   assignedStaffName?: string
 ) {
+  const session = await requireAdminPortal();
+  if (!session) return UNAUTHORIZED;
+
   try {
     const supabase = await getSupabase();
     const updatePayload: any = { status: newStatus };
@@ -556,6 +568,9 @@ export async function updateTicketStatusAction(
   ticketId: string,
   newStatus: "placed" | "preparing" | "ready" | "served" | "disputed"
 ) {
+  const session = await requireAdminPortal();
+  if (!session) return UNAUTHORIZED;
+
   try {
     const supabase = await getSupabase();
     await supabase.from("orders").update({ status: newStatus }).eq("id", ticketId);
@@ -569,6 +584,9 @@ export async function updateTicketStatusAction(
 }
 
 export async function confirmSettlementAction(settlementId: string) {
+  const session = await requirePermission("can_view_finance");
+  if (!session) return UNAUTHORIZED;
+
   try {
     const supabase = await getSupabase();
     const { data: payment } = await supabase
@@ -591,6 +609,9 @@ export async function confirmSettlementAction(settlementId: string) {
 }
 
 export async function quickRestockIngredientAction(ingredientId: string, addQty: number) {
+  const session = await requirePermission("can_manage_inventory");
+  if (!session) return UNAUTHORIZED;
+
   try {
     const supabase = await getSupabase();
     const { data: ing } = await supabase.from("ingredients").select("stock_qty").eq("id", ingredientId).single();

@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient as createServerClient } from "@/lib/supabase/server";
+import { requirePermission, UNAUTHORIZED } from "@/lib/auth/guards";
 
 const DEFAULT_RESTAURANT_ID = "00000000-0000-0000-0000-000000000001";
 
@@ -32,6 +33,9 @@ export interface MockShiftItem {
 }
 
 export async function getShiftsData() {
+  const session = await requirePermission("can_manage_shifts");
+  if (!session) return { shifts: [] };
+
   try {
     const supabase = await getSupabase();
     const { data: dbShifts, error } = await supabase
@@ -87,6 +91,9 @@ export async function createShiftAction(data: {
   assignedTables: string[];
   notes?: string;
 }) {
+  const session = await requirePermission("can_manage_shifts");
+  if (!session) return UNAUTHORIZED;
+
   const code = Math.floor(100000 + Math.random() * 900000).toString();
   const startIso = new Date(`${data.shiftDate} ${data.scheduledStart}`).toISOString();
   const endIso = new Date(`${data.shiftDate} ${data.scheduledEnd}`).toISOString();
@@ -119,6 +126,9 @@ export async function updateShiftStatusAction(
   shiftId: string,
   status: "scheduled" | "checked_in" | "late" | "completed" | "missed"
 ) {
+  const session = await requirePermission("can_manage_shifts");
+  if (!session) return UNAUTHORIZED;
+
   try {
     const supabase = await getSupabase();
     const updatePayload: any = { status };
@@ -141,6 +151,9 @@ export async function updateShiftStatusAction(
 }
 
 export async function regenerateShiftCodeAction(shiftId: string) {
+  const session = await requirePermission("can_manage_shifts");
+  if (!session) return UNAUTHORIZED;
+
   const newCode = Math.floor(100000 + Math.random() * 900000).toString();
   try {
     const supabase = await getSupabase();

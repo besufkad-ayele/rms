@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient as createServerClient } from "@/lib/supabase/server";
+import { requireAdminPortal, UNAUTHORIZED } from "@/lib/auth/guards";
 
 async function getSupabase() {
   try {
@@ -42,6 +43,9 @@ function formatTimeAgo(dateString: string): string {
 }
 
 export async function getOrdersData() {
+  const session = await requireAdminPortal();
+  if (!session) return { orders: [] };
+
   try {
     const supabase = await getSupabase();
     const { data: dbOrders, error } = await supabase
@@ -103,6 +107,9 @@ export async function advanceOrderStatusAction(
   orderId: string,
   newStatus: MockAdminOrder["status"]
 ) {
+  const session = await requireAdminPortal();
+  if (!session) return UNAUTHORIZED;
+
   try {
     const supabase = await getSupabase();
     await supabase.from("orders").update({ status: newStatus }).eq("id", orderId);
@@ -117,6 +124,9 @@ export async function advanceOrderStatusAction(
 }
 
 export async function disputeOrderAction(orderId: string, reason: string) {
+  const session = await requireAdminPortal();
+  if (!session) return UNAUTHORIZED;
+
   try {
     const supabase = await getSupabase();
     await supabase

@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { logoutUserAction } from "@/app/rms-login/actions";
+import { getCurrentSessionAction, logoutUserAction } from "@/app/rms-login/actions";
 import {
   LayoutDashboard,
   Users,
@@ -49,27 +49,34 @@ export default function AdminLayout({
   const [sessionUser, setSessionUser] = useState<{
     fullName: string;
     role: string;
-    permissions?: Record<string, boolean>;
+    permissions?: {
+      can_manage_inventory?: boolean;
+      can_view_finance?: boolean;
+      can_manage_shifts?: boolean;
+      can_manage_staff?: boolean;
+    };
   } | null>(null);
 
   useEffect(() => {
-    // Parse user session from document.cookie
-    try {
-      const match = document.cookie
-        .split("; ")
-        .find((row) => row.startsWith("rms_session_user="));
-      if (match) {
-        const jsonStr = decodeURIComponent(match.split("=")[1]);
-        const parsed = JSON.parse(jsonStr);
-        setSessionUser(parsed);
-      } else {
+    let cancelled = false;
+    async function loadSession() {
+      const session = await getCurrentSessionAction();
+      if (cancelled) return;
+      if (!session) {
         setSessionUser(null);
         router.push("/rms-login");
+        return;
       }
-    } catch (e) {
-      setSessionUser(null);
-      router.push("/rms-login");
+      setSessionUser({
+        fullName: session.fullName,
+        role: session.role,
+        permissions: session.permissions,
+      });
     }
+    loadSession();
+    return () => {
+      cancelled = true;
+    };
   }, [pathname, router]);
 
   const isSuperAdmin = sessionUser?.role === "admin";
@@ -92,7 +99,7 @@ export default function AdminLayout({
     currentNavItem &&
     !isSuperAdmin &&
     currentNavItem.requiredPermission !== "all" &&
-    !userPermissions[currentNavItem.requiredPermission];
+    !(userPermissions as Record<string, boolean | undefined>)[currentNavItem.requiredPermission];
 
   const getInitials = (name?: string) => {
     if (!name) return "AK";

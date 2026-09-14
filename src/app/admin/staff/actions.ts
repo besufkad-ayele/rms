@@ -4,6 +4,8 @@ import { revalidatePath } from "next/cache";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient as createServerClient } from "@/lib/supabase/server";
 import { Staff, StaffRole, EmploymentStatus } from "@/types/database";
+import { hashPin } from "@/lib/auth/pins";
+import { requireAdminPortal, requirePermission, UNAUTHORIZED } from "@/lib/auth/guards";
 
 const DEFAULT_RESTAURANT_ID = "00000000-0000-0000-0000-000000000001";
 
@@ -16,6 +18,9 @@ async function getSupabase() {
 }
 
 export async function getStaffList(): Promise<Staff[]> {
+  const session = await requirePermission("can_manage_staff");
+  if (!session) return [];
+
   try {
     const supabase = await getSupabase();
     const { data, error } = await supabase
@@ -24,7 +29,7 @@ export async function getStaffList(): Promise<Staff[]> {
       .order("created_at", { ascending: false });
 
     if (!error && data) {
-      return data as Staff[];
+      return (data as Staff[]).map((staff) => ({ ...staff, pin_code_hash: "" }));
     }
   } catch (err) {
     console.error("Error fetching staff list from Supabase:", err);
@@ -33,6 +38,9 @@ export async function getStaffList(): Promise<Staff[]> {
 }
 
 export async function createStaffMember(formData: FormData) {
+  const session = await requirePermission("can_manage_staff");
+  if (!session) return UNAUTHORIZED;
+
   const full_name = (formData.get("full_name") as string) || "Staff Personnel";
   const personal_id_number = (formData.get("personal_id_number") as string) || `ETH-FAYDA-${Math.floor(10000000 + Math.random() * 90000000)}`;
   const phone_number = (formData.get("phone_number") as string) || "+251900000000";
@@ -65,7 +73,7 @@ export async function createStaffMember(formData: FormData) {
     date_hired: new Date().toISOString().split("T")[0],
     employment_status: "active",
     role,
-    pin_code_hash: pin_code,
+    pin_code_hash: hashPin(pin_code),
     base_salary,
     permissions,
     performance_score: 5.0,
@@ -95,11 +103,14 @@ export async function updateStaffPermissions(
   status: EmploymentStatus,
   newPinCode?: string
 ) {
+  const session = await requirePermission("can_manage_staff");
+  if (!session) return UNAUTHORIZED;
+
   try {
     const supabase = await getSupabase();
     const updatePayload: any = { role, permissions, employment_status: status };
     if (newPinCode && newPinCode.trim()) {
-      updatePayload.pin_code_hash = newPinCode.trim();
+      updatePayload.pin_code_hash = hashPin(newPinCode.trim());
     }
 
     const { error } = await supabase
@@ -126,6 +137,9 @@ export async function updateStaffPermissions(
 // =====================================================================
 
 export async function getAttendanceLogsAction() {
+  const session = await requirePermission("can_manage_staff");
+  if (!session) return [];
+
   try {
     const supabase = await getSupabase();
     const { data, error } = await supabase
@@ -160,6 +174,9 @@ export async function getAttendanceLogsAction() {
 }
 
 export async function getLeaveRequestsAction() {
+  const session = await requirePermission("can_manage_staff");
+  if (!session) return [];
+
   try {
     const supabase = await getSupabase();
     const { data, error } = await supabase
@@ -194,6 +211,9 @@ export async function getLeaveRequestsAction() {
 }
 
 export async function updateLeaveRequestAction(id: string, newStatus: string) {
+  const session = await requirePermission("can_manage_staff");
+  if (!session) return UNAUTHORIZED;
+
   try {
     const supabase = await getSupabase();
     await supabase.from("leave_requests").update({ status: newStatus }).eq("id", id);
@@ -206,6 +226,9 @@ export async function updateLeaveRequestAction(id: string, newStatus: string) {
 }
 
 export async function getTrainingChecklistAction() {
+  const session = await requirePermission("can_manage_staff");
+  if (!session) return [];
+
   try {
     const supabase = await getSupabase();
     const { data, error } = await supabase
@@ -244,6 +267,9 @@ export async function addTrainingChecklistItemAction(
   itemName: string,
   category: string
 ) {
+  const session = await requirePermission("can_manage_staff");
+  if (!session) return UNAUTHORIZED;
+
   try {
     const supabase = await getSupabase();
     const { data, error } = await supabase
@@ -269,6 +295,9 @@ export async function addTrainingChecklistItemAction(
 }
 
 export async function toggleTrainingChecklistAction(id: string, completed: boolean) {
+  const session = await requirePermission("can_manage_staff");
+  if (!session) return UNAUTHORIZED;
+
   try {
     const supabase = await getSupabase();
     await supabase

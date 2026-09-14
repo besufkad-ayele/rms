@@ -1,9 +1,20 @@
 "use server";
 
-import { cookies } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { Staff } from "@/types/database";
+import { hashPin, isHashedPin, verifyPin } from "@/lib/auth/pins";
+import { getVerifiedSession } from "@/lib/auth/guards";
+import { SESSION_COOKIE, SessionUser, sessionCookieOptions, signSession } from "@/lib/auth/session";
+import { cookies } from "next/headers";
+
+export interface PublicStaffProfile {
+  id: string;
+  full_name: string;
+  role: Staff["role"];
+  profile_photo_url?: string | null;
+  employment_status: Staff["employment_status"];
+}
 
 async function getSupabase() {
   try {
@@ -13,16 +24,30 @@ async function getSupabase() {
   }
 }
 
-export async function getStaffProfilesAction(): Promise<Staff[]> {
+function destinationForStaff(staff: Staff): string {
+  if (staff.role === "admin") return "/admin/dashboard";
+  if (staff.role === "manager") {
+    return staff.permissions?.can_manage_inventory &&
+      !staff.permissions?.can_view_finance &&
+      !staff.permissions?.can_manage_staff
+      ? "/admin/inventory"
+      : "/admin/dashboard";
+  }
+  if (staff.role === "cook") return "/chef/dashboard";
+  return "/staff/dashboard";
+}
+
+export async function getStaffProfilesAction(): Promise<PublicStaffProfile[]> {
   try {
     const supabase = await getSupabase();
     const { data, error } = await supabase
       .from("staff")
-      .select("*")
+      .select("id, full_name, role, profile_photo_url, employment_status")
+      .eq("employment_status", "active")
       .order("full_name", { ascending: true });
 
     if (!error && data) {
-      return data as Staff[];
+      return data as PublicStaffProfile[];
     }
   } catch (err) {
     console.error("Error loading staff profiles from Supabase:", err);
@@ -34,7 +59,7 @@ export async function getStaffProfilesAction(): Promise<Staff[]> {
 export async function authenticateStaffByPinAction(
   staffId: string,
   enteredPin: string
-): Promise<{ success: boolean; message?: string; user?: any; redirectTo?: string }> {
+): Promise<{ success: boolean; message?: string; user?: { id: string; fullName: string; role: Staff["role"]; destination: string }; redirectTo?: string }> {
   const cleanPin = enteredPin.trim();
   let matched: Staff | null = null;
 
@@ -57,46 +82,32 @@ export async function authenticateStaffByPinAction(
     return { success: false, message: "Staff record not found." };
   }
 
-  // Strictly verify PIN against database record
-  if (cleanPin !== matched.pin_code_hash) {
+  if (!verifyPin(cleanPin, matched.pin_code_hash)) {
     return { success: false, message: "Incorrect PIN code for this profile." };
   }
 
-  // Determine Destination based on role and permissions
-  let targetDestination = "/staff/dashboard";
-  if (matched.role === "admin") {
-    targetDestination = "/admin/dashboard";
-  } else if (matched.role === "manager") {
-    targetDestination = matched.permissions?.can_manage_inventory && !matched.permissions?.can_view_finance && !matched.permissions?.can_manage_staff
-      ? "/admin/inventory"
-      : "/admin/dashboard";
-  } else if (matched.role === "cook") {
-    targetDestination = "/chef/dashboard";
-  } else {
-    targetDestination = "/staff/dashboard";
+  if (!isHashedPin(matched.pin_code_hash)) {
+    try {
+      const supabase = await getSupabase();
+      await supabase.from("staff").update({ pin_code_hash: hashPin(cleanPin) }).eq("id", matched.id);
+    } catch (err) {
+      console.error("Failed to upgrade plaintext PIN:", err);
+    }
   }
 
-  // Set session cookie (httpOnly: false so client components can read session)
+  const targetDestination = destinationForStaff(matched);
+  const session: SessionUser = {
+    id: matched.id,
+    fullName: matched.full_name,
+    role: matched.role,
+    email: matched.email,
+    personalId: matched.personal_id_number,
+    permissions: matched.permissions,
+    destination: targetDestination,
+  };
+
   const cookieStore = await cookies();
-  cookieStore.set(
-    "rms_session_user",
-    JSON.stringify({
-      id: matched.id,
-      fullName: matched.full_name,
-      role: matched.role,
-      email: matched.email,
-      personalId: matched.personal_id_number,
-      destination: targetDestination,
-      permissions: matched.permissions,
-      phone: matched.phone_number,
-    }),
-    {
-      path: "/",
-      httpOnly: false,
-      sameSite: "lax",
-      maxAge: 60 * 60 * 24 * 7,
-    }
-  );
+  cookieStore.set(SESSION_COOKIE, await signSession(session), sessionCookieOptions());
 
   return {
     success: true,
@@ -117,6 +128,11 @@ export async function updateStaffProfileAndPinAction(
   newPhone: string,
   newEmergencyContact: string
 ): Promise<{ success: boolean; message: string }> {
+  const session = await getVerifiedSession();
+  if (!session || session.id !== staffId) {
+    return { success: false, message: "You can only update your own profile." };
+  }
+
   try {
     const supabase = await getSupabase();
     const { data: staff, error } = await supabase
@@ -129,7 +145,7 @@ export async function updateStaffProfileAndPinAction(
       return { success: false, message: "Personnel record not found." };
     }
 
-    if (currentPin.trim() !== staff.pin_code_hash) {
+    if (!verifyPin(currentPin.trim(), staff.pin_code_hash)) {
       return { success: false, message: "Current PIN is incorrect." };
     }
 
@@ -137,8 +153,8 @@ export async function updateStaffProfileAndPinAction(
       return { success: false, message: "New PIN must be at least 4 digits." };
     }
 
-    const updatePayload: any = {};
-    if (newPin) updatePayload.pin_code_hash = newPin.trim();
+    const updatePayload: Record<string, string> = {};
+    if (newPin) updatePayload.pin_code_hash = hashPin(newPin.trim());
     if (newPhone) updatePayload.phone_number = newPhone.trim();
     if (newEmergencyContact) updatePayload.emergency_contact_phone = newEmergencyContact.trim();
 
@@ -150,4 +166,3 @@ export async function updateStaffProfileAndPinAction(
     return { success: false, message: "Failed to update profile in database." };
   }
 }
-

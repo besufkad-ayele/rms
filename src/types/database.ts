@@ -164,6 +164,7 @@ export interface Payment {
   status: PaymentStatus;
   confirmed_by?: string | null;
   confirmed_at?: string | null;
+  receipt_number?: string | null;
   created_at: string;
 }
 

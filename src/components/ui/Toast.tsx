@@ -39,13 +39,12 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   return (
     <ToastContext.Provider value={{ toast }}>
       {children}
-      {/* Toast container: bottom-center on mobile, bottom-right on desktop */}
-      <div className="fixed z-50 flex flex-col gap-2 pointer-events-none bottom-4 inset-x-4 sm:inset-x-auto sm:right-6 sm:bottom-6 max-w-sm w-full mx-auto sm:mx-0">
+      <div className="fixed z-[100] top-4 right-4 flex flex-col gap-2 pointer-events-none max-w-sm w-[min(100vw-2rem,24rem)]">
         {toasts.map((t) => (
           <div
             key={t.id}
             className={cn(
-              "pointer-events-auto flex items-start gap-3 rounded-card border border-divider p-4 shadow-elevated transition-all duration-200 animate-in slide-in-from-bottom-4 fade-in bg-white",
+              "pointer-events-auto flex items-start gap-3 rounded-card border border-divider p-4 shadow-elevated transition-all duration-200 animate-in slide-in-from-top-2 fade-in bg-white",
               t.type === "success" && "border-l-4 border-l-status-available",
               t.type === "error" && "border-l-4 border-l-status-sold-out",
               t.type === "info" && "border-l-4 border-l-brand-accent"
