@@ -20,15 +20,14 @@ import {
   X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { Staff } from "@/types/database";
-import { getStaffProfilesAction, authenticateStaffByPinAction } from "./actions";
+import { getStaffProfilesAction, authenticateStaffByPinAction, PublicStaffProfile } from "./actions";
 
 export default function StaffSharedTabletLoginPage() {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
 
-  const [staffList, setStaffList] = useState<Staff[]>([]);
-  const [selectedStaff, setSelectedStaff] = useState<Staff | null>(null);
+  const [staffList, setStaffList] = useState<PublicStaffProfile[]>([]);
+  const [selectedStaff, setSelectedStaff] = useState<PublicStaffProfile | null>(null);
   const [pinInput, setPinInput] = useState<string>("");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successInfo, setSuccessInfo] = useState<string | null>(null);
@@ -41,7 +40,7 @@ export default function StaffSharedTabletLoginPage() {
     loadProfiles();
   }, []);
 
-  const handleSelectStaff = (staff: Staff) => {
+  const handleSelectStaff = (staff: PublicStaffProfile) => {
     setSelectedStaff(staff);
     setPinInput("");
     setErrorMessage(null);
@@ -196,11 +195,8 @@ export default function StaffSharedTabletLoginPage() {
                   <h4 className="font-header text-base font-bold text-brand-heading group-hover:text-brand-accent transition-colors">
                     {staff.full_name}
                   </h4>
-                  <p className="text-xs text-brand-secondary mt-0.5">
-                    {staff.phone_number}
-                  </p>
-                  <p className="text-[11px] text-brand-secondary/80 font-mono mt-1">
-                    {staff.personal_id_number}
+                  <p className="text-xs text-brand-secondary mt-0.5 capitalize">
+                    {staff.role}
                   </p>
                 </div>
 

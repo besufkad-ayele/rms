@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient as createServerClient } from "@/lib/supabase/server";
+import { requirePermission, UNAUTHORIZED } from "@/lib/auth/guards";
 
 const DEFAULT_RESTAURANT_ID = "00000000-0000-0000-0000-000000000001";
 
@@ -54,6 +55,9 @@ export interface MockReconciliationAudit {
 }
 
 export async function getInventoryData() {
+  const session = await requirePermission("can_manage_inventory");
+  if (!session) return { ingredients: [], recipes: [], audits: [] };
+
   try {
     const supabase = await getSupabase();
 
@@ -144,6 +148,9 @@ export async function addIngredientAction(data: {
   lowStockThreshold: number;
   costPerUnit: number;
 }) {
+  const session = await requirePermission("can_manage_inventory");
+  if (!session) return UNAUTHORIZED;
+
   try {
     const supabase = await getSupabase();
     await supabase.from("ingredients").insert([
@@ -167,6 +174,9 @@ export async function addIngredientAction(data: {
 }
 
 export async function restockIngredientAction(ingredientId: string, addedQty: number) {
+  const session = await requirePermission("can_manage_inventory");
+  if (!session) return UNAUTHORIZED;
+
   try {
     const supabase = await getSupabase();
     const { data: ing } = await supabase.from("ingredients").select("stock_qty").eq("id", ingredientId).single();
@@ -195,6 +205,9 @@ export async function submitStockAuditAction(data: {
   physicalCount: number;
   reason?: "portioning_error" | "spoilage" | "kitchen_waste" | "unrecorded_use";
 }) {
+  const session = await requirePermission("can_manage_inventory");
+  if (!session) return UNAUTHORIZED;
+
   try {
     const supabase = await getSupabase();
     await supabase

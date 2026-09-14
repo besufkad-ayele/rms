@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient as createServerClient } from "@/lib/supabase/server";
+import { requireAdminPortal, UNAUTHORIZED } from "@/lib/auth/guards";
 
 const DEFAULT_RESTAURANT_ID = "00000000-0000-0000-0000-000000000001";
 
@@ -46,6 +47,9 @@ export async function getMenuItemsAction(): Promise<DBMenuItem[]> {
 }
 
 export async function createMenuItemAction(formData: FormData) {
+  const session = await requireAdminPortal();
+  if (!session) return UNAUTHORIZED;
+
   const name = (formData.get("name") as string) || "New Dish";
   const amharic_name = (formData.get("amharic_name") as string) || null;
   const description = (formData.get("description") as string) || null;
@@ -86,6 +90,9 @@ export async function createMenuItemAction(formData: FormData) {
 }
 
 export async function updateMenuItemAction(itemId: string, data: Partial<DBMenuItem>) {
+  const session = await requireAdminPortal();
+  if (!session) return UNAUTHORIZED;
+
   try {
     const supabase = await getSupabase();
     await supabase.from("menu_items").update(data).eq("id", itemId);
@@ -99,6 +106,9 @@ export async function updateMenuItemAction(itemId: string, data: Partial<DBMenuI
 }
 
 export async function deleteMenuItemAction(itemId: string) {
+  const session = await requireAdminPortal();
+  if (!session) return UNAUTHORIZED;
+
   try {
     const supabase = await getSupabase();
     await supabase.from("menu_items").delete().eq("id", itemId);

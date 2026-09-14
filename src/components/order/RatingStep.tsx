@@ -2,9 +2,10 @@
 
 import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { Star, Heart, MessageSquare, ExternalLink, Sparkles, CheckCircle2, ArrowRight, Home } from "lucide-react";
+import { Star, Heart, MessageSquare, ExternalLink, Sparkles, CheckCircle2, ArrowRight, Home, Phone } from "lucide-react";
 import { RESTAURANT_INFO } from "@/data/mockMenu";
 import { cn } from "@/lib/utils";
+import { useRememberedGuest } from "@/lib/useRememberedGuest";
 
 export interface RatingFeedbackData {
   staffFriendliness: number;
@@ -14,6 +15,7 @@ export interface RatingFeedbackData {
   comment: string;
   tableCode: string;
   redirectedToGoogle?: boolean;
+  customerPhone?: string;
 }
 
 interface RatingStepProps {
@@ -38,6 +40,13 @@ export function RatingStep({
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [redirectCountdown, setRedirectCountdown] = useState(5);
+  const { phone: savedPhone, name: savedName, isReturning, remember } = useRememberedGuest();
+  const [phone, setPhone] = useState("");
+  const [showPhone, setShowPhone] = useState(false);
+
+  useEffect(() => {
+    if (savedPhone) setPhone(savedPhone);
+  }, [savedPhone]);
 
   const handleReturn = () => {
     if (onReturnHome) {
@@ -61,6 +70,8 @@ export function RatingStep({
 
   const handleSubmit = async () => {
     setIsSaving(true);
+    const cleanPhone = phone.trim();
+    if (cleanPhone) remember(cleanPhone, savedName);
     const feedbackPayload: RatingFeedbackData = {
       staffFriendliness,
       staffPromptness,
@@ -69,6 +80,7 @@ export function RatingStep({
       comment,
       tableCode,
       redirectedToGoogle: false,
+      customerPhone: cleanPhone || undefined,
     };
     if (onSubmitRating) {
       await onSubmitRating(feedbackPayload);
@@ -81,6 +93,9 @@ export function RatingStep({
     // 1. Open Google Review link in new tab
     window.open(RESTAURANT_INFO.googleBusinessUrl, "_blank", "noopener,noreferrer");
 
+    const cleanPhone = phone.trim();
+    if (cleanPhone) remember(cleanPhone, savedName);
+
     // 2. Notify parent of Google redirect and await completion
     if (onSubmitRating) {
       await onSubmitRating({
@@ -91,6 +106,7 @@ export function RatingStep({
         comment,
         tableCode,
         redirectedToGoogle: true,
+        customerPhone: cleanPhone || undefined,
       });
     }
 
@@ -301,6 +317,42 @@ export function RatingStep({
           rows={3}
           className="w-full rounded-button border border-divider bg-white p-3 text-xs text-brand-primary focus:outline-none focus:ring-1 focus:ring-brand-accent"
         />
+      </div>
+
+      {/* Optional phone for loyalty */}
+      <div>
+        <label className="block text-xs font-semibold text-brand-primary mb-1.5 flex items-center gap-1">
+          <Phone className="h-3.5 w-3.5" />
+          Phone number (Optional)
+        </label>
+        {isReturning && !showPhone ? (
+          <div className="flex items-center justify-between gap-2 rounded-button border border-status-available/40 bg-status-available-bg/40 px-3 py-2 text-xs">
+            <span className="text-brand-primary">
+              Saved: <strong className="font-mono">{savedPhone}</strong>
+            </span>
+            <button
+              type="button"
+              onClick={() => setShowPhone(true)}
+              className="font-semibold text-brand-accent shrink-0"
+            >
+              Change
+            </button>
+          </div>
+        ) : (
+          <>
+            <input
+              type="tel"
+              inputMode="tel"
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
+              placeholder="e.g. 0912 345 678"
+              className="w-full rounded-button border border-divider bg-white px-3 py-2 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-brand-accent"
+            />
+            <p className="mt-1 text-[10px] text-brand-secondary">
+              Join our loyalty rewards. Saved on this device so you won&apos;t retype it next visit.
+            </p>
+          </>
+        )}
       </div>
 
       {/* Submit Button */}

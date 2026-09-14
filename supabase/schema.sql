@@ -85,6 +85,8 @@ CREATE TABLE IF NOT EXISTS restaurants (
     opening_hours JSONB DEFAULT '{"mon":{"open":"08:00","close":"23:00"},"tue":{"open":"08:00","close":"23:00"},"wed":{"open":"08:00","close":"23:00"},"thu":{"open":"08:00","close":"23:00"},"fri":{"open":"08:00","close":"23:30"},"sat":{"open":"08:00","close":"23:30"},"sun":{"open":"09:00","close":"22:30"}}',
     google_business_url TEXT,
     currency TEXT DEFAULT 'ETB',
+    tin TEXT,
+    vat_number TEXT,
     created_at TIMESTAMPTZ DEFAULT now()
 );
 
@@ -237,8 +239,26 @@ CREATE TABLE IF NOT EXISTS orders (
     total_amount NUMERIC(10,2) NOT NULL DEFAULT 0.00,
     calculated_cogs NUMERIC(10,2) DEFAULT 0.00,
     customer_notes TEXT,
+    customer_id UUID,
+    customer_phone TEXT,
     created_at TIMESTAMPTZ DEFAULT now()
 );
+
+-- 3.9b Customers (phone-keyed directory for loyalty / gamification)
+CREATE TABLE IF NOT EXISTS customers (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    restaurant_id UUID REFERENCES restaurants(id) ON DELETE CASCADE,
+    phone TEXT NOT NULL,
+    full_name TEXT,
+    visit_count INT NOT NULL DEFAULT 0,
+    total_spent NUMERIC(12,2) NOT NULL DEFAULT 0,
+    total_tips NUMERIC(12,2) NOT NULL DEFAULT 0,
+    loyalty_points INT NOT NULL DEFAULT 0,
+    first_seen TIMESTAMPTZ DEFAULT now(),
+    last_seen TIMESTAMPTZ DEFAULT now(),
+    created_at TIMESTAMPTZ DEFAULT now()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS customers_phone_uidx ON customers (restaurant_id, phone);
 
 -- 3.10 Order Items (Line Items)
 CREATE TABLE IF NOT EXISTS order_items (
@@ -263,8 +283,31 @@ CREATE TABLE IF NOT EXISTS payments (
     status payment_status_enum DEFAULT 'pending',
     confirmed_by UUID REFERENCES staff(id),
     confirmed_at TIMESTAMPTZ,
+    receipt_number TEXT,
     created_at TIMESTAMPTZ DEFAULT now()
 );
+
+CREATE UNIQUE INDEX IF NOT EXISTS payments_receipt_number_uidx
+  ON public.payments (receipt_number)
+  WHERE receipt_number IS NOT NULL;
+
+CREATE SEQUENCE IF NOT EXISTS public.receipt_number_seq START WITH 1001;
+
+CREATE OR REPLACE FUNCTION public.next_receipt_number()
+RETURNS TEXT
+LANGUAGE sql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT 'KA-' || to_char(timezone('Africa/Addis_Ababa', now()), 'YYYYMMDD') || '-' ||
+         lpad(nextval('public.receipt_number_seq')::text, 5, '0');
+$$;
+
+REVOKE ALL ON FUNCTION public.next_receipt_number() FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.next_receipt_number() TO service_role;
+
+REVOKE ALL ON SEQUENCE public.receipt_number_seq FROM PUBLIC, anon, authenticated;
+GRANT USAGE, SELECT ON SEQUENCE public.receipt_number_seq TO service_role;
 
 -- 3.12 Feedback (Multi-factor Rating & Reputation Engine)
 CREATE TABLE IF NOT EXISTS feedback (
@@ -429,11 +472,29 @@ INSERT INTO storage.buckets (id, name, public)
 VALUES 
     ('staff-docs', 'staff-docs', false),
     ('menu-photos', 'menu-photos', true),
-    ('payment-receipts', 'payment-receipts', true)
+    ('payment-receipts', 'payment-receipts', false)
 ON CONFLICT (id) DO NOTHING;
 
--- -- Storage RLS
 CREATE POLICY "Public menu photos" ON storage.objects FOR SELECT USING (bucket_id = 'menu-photos');
-CREATE POLICY "Public payment receipts" ON storage.objects FOR SELECT USING (bucket_id = 'payment-receipts');
-CREATE POLICY "Allow authenticated uploads" ON storage.objects FOR INSERT WITH CHECK (true);
-;
+
+-- 6. ROW LEVEL SECURITY
+-- Application traffic uses the service role. Anon/authenticated get no table access.
+REVOKE ALL ON ALL TABLES IN SCHEMA public FROM anon, authenticated;
+REVOKE ALL ON ALL SEQUENCES IN SCHEMA public FROM anon, authenticated;
+
+DO $$
+DECLARE t text;
+BEGIN
+  FOREACH t IN ARRAY ARRAY[
+    'restaurants','staff','shifts','training_checklist','clock_in_logs','leave_requests',
+    'dining_sections','tables','ingredients','menu_items','recipes','orders',
+    'order_items','payments','feedback','expenses'
+  ]
+  LOOP
+    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = t) THEN
+      EXECUTE format('ALTER TABLE public.%I ENABLE ROW LEVEL SECURITY', t);
+      EXECUTE format('ALTER TABLE public.%I FORCE ROW LEVEL SECURITY', t);
+    END IF;
+  END LOOP;
+END $$;
+

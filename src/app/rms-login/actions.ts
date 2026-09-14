@@ -4,6 +4,14 @@ import { cookies } from "next/headers";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient as createServerClient } from "@/lib/supabase/server";
 import { Staff, StaffRole } from "@/types/database";
+import { hashPin, isHashedPin, verifyPin } from "@/lib/auth/pins";
+import { getVerifiedSession } from "@/lib/auth/guards";
+import {
+  SESSION_COOKIE,
+  SessionUser,
+  sessionCookieOptions,
+  signSession,
+} from "@/lib/auth/session";
 
 export interface LoginResult {
   success: boolean;
@@ -17,6 +25,45 @@ export interface LoginResult {
     destination: string;
   };
   redirectTo?: string;
+}
+
+async function getSupabase() {
+  try {
+    return createAdminClient();
+  } catch {
+    return await createServerClient();
+  }
+}
+
+function destinationForStaff(staff: Staff): string {
+  if (staff.role === "admin") return "/admin/dashboard";
+  if (staff.role === "manager") {
+    if (
+      staff.permissions?.can_manage_inventory &&
+      !staff.permissions?.can_view_finance &&
+      !staff.permissions?.can_manage_staff
+    ) {
+      return "/admin/inventory";
+    }
+    return "/admin/dashboard";
+  }
+  if (staff.role === "cook") return "/chef/dashboard";
+  return "/staff/dashboard";
+}
+
+async function persistSession(staff: Staff, destination: string) {
+  const session: SessionUser = {
+    id: staff.id,
+    fullName: staff.full_name,
+    role: staff.role,
+    email: staff.email,
+    personalId: staff.personal_id_number,
+    permissions: staff.permissions,
+    destination,
+  };
+  const token = await signSession(session);
+  const cookieStore = await cookies();
+  cookieStore.set(SESSION_COOKIE, token, sessionCookieOptions());
 }
 
 export async function authenticateStaffAction(
@@ -35,15 +82,8 @@ export async function authenticateStaffAction(
 
   let matchedStaff: Staff | null = null;
 
-  // Query Supabase staff table for matching email, phone, or Fayda ID
   try {
-    let supabase;
-    try {
-      supabase = createAdminClient();
-    } catch {
-      supabase = await createServerClient();
-    }
-
+    const supabase = await getSupabase();
     const { data, error } = await supabase
       .from("staff")
       .select("*")
@@ -64,51 +104,27 @@ export async function authenticateStaffAction(
     };
   }
 
-  // Verify PIN / Password against database record
-  if (cleanPin !== matchedStaff.pin_code_hash) {
+  if (!verifyPin(cleanPin, matchedStaff.pin_code_hash)) {
     return {
       success: false,
       message: "Incorrect Password or PIN for this personnel record.",
     };
   }
 
-  // Determine Destination route based on role & permissions
-  let targetDestination = "/admin/dashboard";
-
-  if (matchedStaff.role === "admin") {
-    targetDestination = "/admin/dashboard";
-  } else if (matchedStaff.role === "manager") {
-    if (matchedStaff.permissions?.can_manage_inventory && !matchedStaff.permissions?.can_view_finance && !matchedStaff.permissions?.can_manage_staff) {
-      targetDestination = "/admin/inventory";
-    } else {
-      targetDestination = "/admin/dashboard";
+  if (!isHashedPin(matchedStaff.pin_code_hash)) {
+    try {
+      const supabase = await getSupabase();
+      await supabase
+        .from("staff")
+        .update({ pin_code_hash: hashPin(cleanPin) })
+        .eq("id", matchedStaff.id);
+    } catch (err) {
+      console.error("Failed to upgrade plaintext PIN:", err);
     }
-  } else if (matchedStaff.role === "cook") {
-    targetDestination = "/chef/dashboard";
-  } else {
-    targetDestination = "/staff/dashboard";
   }
 
-  // Store session cookie (httpOnly: false so client layouts can read session)
-  const cookieStore = await cookies();
-  cookieStore.set(
-    "rms_session_user",
-    JSON.stringify({
-      id: matchedStaff.id,
-      fullName: matchedStaff.full_name,
-      role: matchedStaff.role,
-      email: matchedStaff.email,
-      personalId: matchedStaff.personal_id_number,
-      permissions: matchedStaff.permissions,
-      destination: targetDestination,
-    }),
-    {
-      path: "/",
-      httpOnly: false,
-      sameSite: "lax",
-      maxAge: 60 * 60 * 24 * 7,
-    }
-  );
+  const targetDestination = destinationForStaff(matchedStaff);
+  await persistSession(matchedStaff, targetDestination);
 
   return {
     success: true,
@@ -124,15 +140,16 @@ export async function authenticateStaffAction(
   };
 }
 
-export async function logoutUserAction() {
-  const cookieStore = await cookies();
-  cookieStore.set("rms_session_user", "", {
-    path: "/",
-    httpOnly: true,
-    expires: new Date(0),
-    maxAge: 0,
-  });
-  cookieStore.delete("rms_session_user");
-  return { success: true };
+export async function getCurrentSessionAction(): Promise<SessionUser | null> {
+  return getVerifiedSession();
 }
 
+export async function logoutUserAction() {
+  const cookieStore = await cookies();
+  cookieStore.set(SESSION_COOKIE, "", {
+    ...sessionCookieOptions(0),
+    expires: new Date(0),
+  });
+  cookieStore.delete(SESSION_COOKIE);
+  return { success: true };
+}

@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient as createServerClient } from "@/lib/supabase/server";
 import { TableFloorState } from "@/data/mockDashboard";
+import { requireAdminPortal, UNAUTHORIZED } from "@/lib/auth/guards";
 
 const DEFAULT_RESTAURANT_ID = "00000000-0000-0000-0000-000000000001";
 
@@ -30,11 +31,14 @@ export interface AvailableStaff {
 }
 
 export async function getAvailableWaitersAction(): Promise<AvailableStaff[]> {
+  const session = await requireAdminPortal();
+  if (!session) return [];
+
   try {
     const supabase = await getSupabase();
     const { data, error } = await supabase
       .from("staff")
-      .select("id, full_name, role, phone_number")
+      .select("id, full_name, role")
       .eq("role", "waiter")
       .eq("employment_status", "active")
       .order("full_name", { ascending: true });
@@ -49,7 +53,7 @@ export async function getAvailableWaitersAction(): Promise<AvailableStaff[]> {
         id: s.id,
         fullName: s.full_name,
         role: s.role,
-        phone: s.phone_number,
+        phone: undefined,
       }));
     }
   } catch (err) {
@@ -114,6 +118,9 @@ export async function updateTableDetailsAction(
     status: "free" | "occupied" | "reserved";
   }
 ) {
+  const session = await requireAdminPortal();
+  if (!session) return UNAUTHORIZED;
+
   try {
     const supabase = await getSupabase();
     const updatePayload: any = {
@@ -147,6 +154,9 @@ export async function createNewTableAction(data: {
   section: string;
   assignedStaffId?: string | null;
 }) {
+  const session = await requireAdminPortal();
+  if (!session) return UNAUTHORIZED;
+
   const code = `T-${data.tableNumber.toString().padStart(2, "0")}`;
 
   try {
@@ -182,6 +192,9 @@ export async function createNewTableAction(data: {
 }
 
 export async function deleteTableAction(tableId: string) {
+  const session = await requireAdminPortal();
+  if (!session) return UNAUTHORIZED;
+
   try {
     const supabase = await getSupabase();
     await supabase.from("tables").delete().eq("id", tableId);
@@ -228,6 +241,9 @@ export async function getDiningSectionsAction(): Promise<DiningSection[]> {
 }
 
 export async function createDiningSectionAction(name: string, description?: string) {
+  const session = await requireAdminPortal();
+  if (!session) return UNAUTHORIZED;
+
   try {
     const supabase = await getSupabase();
     const existing = await getDiningSectionsAction();
@@ -254,6 +270,9 @@ export async function createDiningSectionAction(name: string, description?: stri
 }
 
 export async function updateDiningSectionAction(id: string, name: string, description?: string) {
+  const session = await requireAdminPortal();
+  if (!session) return UNAUTHORIZED;
+
   try {
     const supabase = await getSupabase();
     const { error } = await supabase.from("dining_sections").update({ name, description }).eq("id", id);
@@ -270,6 +289,9 @@ export async function updateDiningSectionAction(id: string, name: string, descri
 }
 
 export async function deleteDiningSectionAction(id: string) {
+  const session = await requireAdminPortal();
+  if (!session) return UNAUTHORIZED;
+
   try {
     const supabase = await getSupabase();
     const { error } = await supabase.from("dining_sections").delete().eq("id", id);

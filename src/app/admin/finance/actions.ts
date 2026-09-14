@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient as createServerClient } from "@/lib/supabase/server";
+import { requirePermission, UNAUTHORIZED } from "@/lib/auth/guards";
 
 const DEFAULT_RESTAURANT_ID = "00000000-0000-0000-0000-000000000001";
 
@@ -35,6 +36,24 @@ export interface MenuEngineeringItem {
 }
 
 export async function getFinanceData() {
+  const session = await requirePermission("can_view_finance");
+  if (!session) {
+    return {
+      kpis: {
+        grossRevenue: 0,
+        realizedCogs: 0,
+        grossProfit: 0,
+        totalOpex: 0,
+        netProfit: 0,
+        foodCostPercent: 0,
+        netMarginPercent: 0,
+        channelBreakdown: { dineIn: 0, takeout: 0, delivery: 0 },
+      },
+      expenses: [],
+      menuMatrix: [],
+    };
+  }
+
   try {
     const supabase = await getSupabase();
 
@@ -147,6 +166,9 @@ export async function logExpenseAction(data: {
   amount: number;
   expenseDate: string;
 }) {
+  const session = await requirePermission("can_view_finance");
+  if (!session) return UNAUTHORIZED;
+
   try {
     const supabase = await getSupabase();
     await supabase.from("expenses").insert([

@@ -4,18 +4,9 @@ import React, { useState, useEffect } from "react";
 import {
   Flame,
   Clock,
-  CheckCircle2,
   AlertTriangle,
   UtensilsCrossed,
-  ChefHat,
-  Search,
-  Filter,
-  Eye,
-  X,
   Bell,
-  Sparkles,
-  RefreshCw,
-  Layers,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -23,6 +14,9 @@ interface ChefTicketItem {
   name: string;
   qty: number;
   notes?: string;
+  omittedIngredients?: string[];
+  extras?: string[];
+  chefNote?: string;
   station: "grill" | "stew" | "starter" | "bar";
   recipeBOM: { ingredient: string; amount: string }[];
 }
@@ -39,19 +33,11 @@ interface ChefTicket {
   customerNote?: string;
 }
 
-import { getKitchenOrdersAction, updateKitchenOrderStatusAction } from "./actions";
+import { getKitchenOrdersAction } from "./actions";
 
 export default function ChefDashboardPage() {
   const [tickets, setTickets] = useState<ChefTicket[]>([]);
   const [activeStation, setActiveStation] = useState<string>("all");
-  const [selectedBOMItem, setSelectedBOMItem] = useState<ChefTicketItem | null>(null);
-  const [toastMessage, setToastMessage] = useState<string | null>(null);
-
-  const showToast = (msg: string) => {
-    setToastMessage(msg);
-    setTimeout(() => setToastMessage(null), 3000);
-  };
-
   const fetchLiveTickets = async () => {
     const res = await getKitchenOrdersAction();
     if (res.tickets) {
@@ -65,26 +51,6 @@ export default function ChefDashboardPage() {
     return () => clearInterval(interval);
   }, []);
 
-  const advanceTicketStatus = async (ticketId: string) => {
-    const target = tickets.find((t) => t.id === ticketId);
-    if (!target) return;
-
-    let nextStatus: "placed" | "preparing" | "ready" | "served" = "preparing";
-    if (target.status === "placed") nextStatus = "preparing";
-    else if (target.status === "preparing") nextStatus = "ready";
-    else if (target.status === "ready") nextStatus = "served";
-
-    await updateKitchenOrderStatusAction(ticketId, nextStatus);
-
-    setTickets((prev) =>
-      prev
-        .map((t) => (t.id === ticketId ? { ...t, status: nextStatus as any } : t))
-        .filter((t) => t.status !== "served")
-    );
-
-    showToast(`Order ${target.orderNumber} updated to ${nextStatus.toUpperCase()}!`);
-  };
-
   const filteredTickets = tickets.filter((t) => {
     if (activeStation === "all") return true;
     return t.items.some((item) => item.station === activeStation);
@@ -95,14 +61,10 @@ export default function ChefDashboardPage() {
   const readyCount = tickets.filter((t) => t.status === "ready").length;
 
   return (
-    <div className="space-y-6 pb-16">
-      {/* Toast */}
-      {toastMessage && (
-        <div className="fixed bottom-6 right-6 z-50 flex items-center gap-3 rounded-card bg-brand-primary px-4 py-3 text-white shadow-elevated transition-all animate-in fade-in slide-in-from-bottom-4 border border-white/20">
-          <CheckCircle2 className="h-4 w-4 text-status-free shrink-0" />
-          <p className="text-xs font-medium">{toastMessage}</p>
-        </div>
-      )}
+    <div className="space-y-6 pb-16 select-none">
+      <div className="rounded-card border border-white/10 bg-white/5 px-4 py-3 text-xs text-white/80">
+        Kitchen TV is view-only. Waiters start cooking, mark ready, and mark served from the floor console.
+      </div>
 
       {/* Ribbon Stats */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -190,7 +152,7 @@ export default function ChefDashboardPage() {
             <div
               key={ticket.id}
               className={cn(
-                "rounded-card bg-[#231F20] border p-5 flex flex-col justify-between space-y-4 shadow-elevated transition",
+                "rounded-card bg-[#231F20] border p-5 flex flex-col justify-between space-y-4 shadow-elevated pointer-events-none",
                 isPlaced && "border-status-danger/40 bg-gradient-to-b from-[#2a1c20] to-[#231F20]",
                 isPreparing && "border-status-occupied/40 bg-gradient-to-b from-[#2a241c] to-[#231F20]",
                 isReady && "border-status-free/40 bg-gradient-to-b from-[#1c2a20] to-[#231F20]"
@@ -237,108 +199,80 @@ export default function ChefDashboardPage() {
                 <div className="mt-4 space-y-2.5 divide-y divide-white/10">
                   {ticket.items.map((item, idx) => (
                     <div key={idx} className="pt-2 flex items-start justify-between">
-                      <div>
+                      <div className="min-w-0">
                         <div className="flex items-center gap-2">
-                          <span className="h-6 w-6 rounded-pill bg-brand-accent text-white font-bold text-xs flex items-center justify-center">
+                          <span className="h-6 w-6 rounded-pill bg-brand-accent text-white font-bold text-xs flex items-center justify-center shrink-0">
                             {item.qty}x
                           </span>
                           <span className="font-bold text-sm text-white">{item.name}</span>
                         </div>
-                        {item.notes && (
+
+                        {/* Omitted ingredients (86 / no-X) */}
+                        {item.omittedIngredients && item.omittedIngredients.length > 0 && (
+                          <div className="mt-1.5 pl-8 flex flex-wrap gap-1">
+                            {item.omittedIngredients.map((ing, i) => (
+                              <span
+                                key={i}
+                                className="inline-flex items-center gap-1 rounded-pill bg-status-danger/15 border border-status-danger/40 px-2 py-0.5 text-[10px] font-bold text-status-danger uppercase"
+                              >
+                                No {ing}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+
+                        {/* Extras / add-ons */}
+                        {item.extras && item.extras.length > 0 && (
+                          <div className="mt-1.5 pl-8 flex flex-wrap gap-1">
+                            {item.extras.map((ex, i) => (
+                              <span
+                                key={i}
+                                className="inline-flex items-center gap-1 rounded-pill bg-status-free/15 border border-status-free/40 px-2 py-0.5 text-[10px] font-bold text-status-free uppercase"
+                              >
+                                + {ex}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+
+                        {/* Chef note for this item */}
+                        {item.chefNote && (
+                          <p className="mt-1.5 pl-8 text-xs text-status-occupied font-semibold">
+                            &ldquo;{item.chefNote}&rdquo;
+                          </p>
+                        )}
+
+                        {item.notes && !item.chefNote && (
                           <p className="text-xs text-status-occupied pl-8">{item.notes}</p>
                         )}
                       </div>
 
-                      <button
-                        onClick={() => setSelectedBOMItem(item)}
-                        title="View Recipe Ingredients & BOM"
-                        className="text-[10px] text-[#92898A] hover:text-white underline font-semibold mt-1"
-                      >
-                        BOM
-                      </button>
+                      <span className="text-[10px] text-[#92898A] font-semibold mt-1 uppercase shrink-0 ml-2">
+                        {item.station}
+                      </span>
                     </div>
                   ))}
                 </div>
               </div>
 
-              {/* Status Action Buttons */}
               <div className="pt-3 border-t border-white/10">
-                {isPlaced && (
-                  <button
-                    onClick={() => advanceTicketStatus(ticket.id)}
-                    className="w-full flex items-center justify-center gap-2 rounded-button bg-status-danger py-2.5 text-xs font-bold text-white shadow-sm hover:opacity-90 transition"
-                  >
-                    <Flame className="h-4 w-4" />
-                    <span>Start Cooking (Light Hearth)</span>
-                  </button>
-                )}
-
-                {isPreparing && (
-                  <button
-                    onClick={() => advanceTicketStatus(ticket.id)}
-                    className="w-full flex items-center justify-center gap-2 rounded-button bg-status-occupied py-2.5 text-xs font-bold text-white shadow-sm hover:opacity-90 transition"
-                  >
-                    <Bell className="h-4 w-4" />
-                    <span>Mark Order Ready (Notify Waiter)</span>
-                  </button>
-                )}
-
-                {isReady && (
-                  <button
-                    onClick={() => advanceTicketStatus(ticket.id)}
-                    className="w-full flex items-center justify-center gap-2 rounded-button bg-status-free py-2.5 text-xs font-bold text-white shadow-sm hover:opacity-90 transition"
-                  >
-                    <CheckCircle2 className="h-4 w-4" />
-                    <span>Hand Off to Server (Clear Ticket)</span>
-                  </button>
-                )}
+                <div
+                  className={cn(
+                    "w-full flex items-center justify-center gap-2 rounded-button py-2.5 text-xs font-bold",
+                    isPlaced && "bg-status-danger/90 text-white",
+                    isPreparing && "bg-status-occupied/90 text-white",
+                    isReady && "bg-status-free/90 text-white"
+                  )}
+                >
+                  {isPlaced && "Waiting — waiter will start cooking"}
+                  {isPreparing && "On the hearth — waiter marks ready"}
+                  {isReady && "Ready — waiter will serve and clear"}
+                </div>
               </div>
             </div>
           );
         })}
       </div>
-
-      {/* RECIPE BOM DRAWER / MODAL */}
-      {selectedBOMItem && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in">
-          <div className="w-full max-w-md rounded-card bg-[#231F20] p-6 border border-white/20 shadow-elevated space-y-4 text-white">
-            <div className="flex items-center justify-between border-b border-white/10 pb-3">
-              <div className="flex items-center gap-2">
-                <ChefHat className="h-5 w-5 text-brand-accent" />
-                <h3 className="font-header text-base font-bold">
-                  Recipe Specification: {selectedBOMItem.name}
-                </h3>
-              </div>
-              <button
-                onClick={() => setSelectedBOMItem(null)}
-                className="p-1 rounded-button text-[#92898A] hover:text-white"
-              >
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-
-            <p className="text-xs text-[#92898A]">
-              Standardized culinary portions automatically deducted from raw ingredient stock upon order placement:
-            </p>
-
-            <div className="space-y-2 rounded-card bg-white/5 p-3 border border-white/10">
-              {selectedBOMItem.recipeBOM.map((bom, idx) => (
-                <div key={idx} className="flex justify-between text-xs py-1 border-b border-white/5 last:border-0">
-                  <span className="text-white/90 font-medium">{bom.ingredient}</span>
-                  <span className="font-mono font-bold text-status-occupied">{bom.amount}</span>
-                </div>
-              ))}
-            </div>
-
-            <button
-              onClick={() => setSelectedBOMItem(null)}
-              className="w-full rounded-button bg-brand-accent py-2 text-xs font-bold text-white hover:opacity-90"
-            >
-              Close Specification
-            </button>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

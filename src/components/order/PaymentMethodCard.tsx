@@ -46,7 +46,7 @@ export function PaymentMethodCard({
           </span>
         </div>
         <p className="text-xs text-brand-secondary mt-1">
-          Select your preferred payment channel. No service surcharge.
+          Select your channel. Staff must confirm the payment before the table is closed.
         </p>
       </div>
 
@@ -219,12 +219,12 @@ export function PaymentMethodCard({
         {isProcessing ? (
           <span className="inline-flex items-center gap-2">
             <span className="h-4 w-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-            Confirming Payment...
+            Submitting for staff confirmation...
           </span>
         ) : (
           <>
             <span>
-              Confirm {selectedMethod === "cash" ? "Cash Settlement" : "Payment"} ({formatETB(totalAmount)})
+              Notify staff of {selectedMethod === "cash" ? "cash" : "transfer"} ({formatETB(totalAmount)})
             </span>
             <ArrowRight className="h-4 w-4" />
           </>

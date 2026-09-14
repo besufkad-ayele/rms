@@ -1,8 +1,8 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient as createServerClient } from "@/lib/supabase/server";
+import { requireKitchen } from "@/lib/auth/guards";
 
 async function getSupabase() {
   try {
@@ -13,6 +13,9 @@ async function getSupabase() {
 }
 
 export async function getKitchenOrdersAction() {
+  const session = await requireKitchen();
+  if (!session) return { tickets: [] };
+
   try {
     const supabase = await getSupabase();
     const { data, error } = await supabase
@@ -28,6 +31,8 @@ export async function getKitchenOrdersAction() {
           id,
           quantity,
           unit_price,
+          kitchen_notes,
+          customization,
           menu_item:menu_item_id (
             name,
             category
@@ -68,10 +73,15 @@ export async function getKitchenOrdersAction() {
             else if (cat === "drink") station = "bar";
             else if (dishName.toLowerCase().includes("wot") || dishName.toLowerCase().includes("shiro")) station = "stew";
 
+            const custom = it.customization || null;
             return {
               name: dishName,
               qty: it.quantity || 1,
               station: station,
+              notes: it.kitchen_notes || undefined,
+              omittedIngredients: custom?.omittedIngredients || [],
+              extras: (custom?.selectedExtras || []).map((e: any) => e.name),
+              chefNote: custom?.chefNote || undefined,
               recipeBOM: [
                 { ingredient: "Highland Seasoning", amount: "15g" },
                 { ingredient: "Niter Kibbeh / Spices", amount: "25g" },
@@ -91,22 +101,11 @@ export async function getKitchenOrdersAction() {
 }
 
 export async function updateKitchenOrderStatusAction(
-  orderId: string,
-  newStatus: "placed" | "preparing" | "ready" | "served"
+  _orderId: string,
+  _newStatus: "placed" | "preparing" | "ready" | "served"
 ) {
-  try {
-    const supabase = await getSupabase();
-    await supabase.from("orders").update({ status: newStatus }).eq("id", orderId);
-
-    revalidatePath("/chef/dashboard");
-    revalidatePath("/admin/dashboard");
-    revalidatePath("/admin/orders");
-    revalidatePath("/admin/tables");
-    revalidatePath("/staff/dashboard");
-
-    return { success: true };
-  } catch (err) {
-    console.error("Failed to update kitchen order status:", err);
-    return { success: false };
-  }
+  return {
+    success: false as const,
+    message: "Kitchen TV is view-only. Waiters update order status from the floor console.",
+  };
 }

@@ -1,16 +1,11 @@
 "use client";
 
 import React from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ChefHat, LogOut, UserCheck, ShieldCheck, ArrowLeft } from "lucide-react";
+import { ChefHat, LogOut } from "lucide-react";
 import { logoutUserAction } from "@/app/rms-login/actions";
 
-export default function StaffLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export default function StaffLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
 
   const handleLogout = async () => {
@@ -20,7 +15,6 @@ export default function StaffLayout({
 
   return (
     <div className="min-h-screen bg-bg-subtle flex flex-col">
-      {/* Staff Header */}
       <header className="h-16 border-b border-divider bg-white px-4 sm:px-8 flex items-center justify-between sticky top-0 z-40">
         <div className="flex items-center gap-3">
           <div className="h-9 w-9 rounded-xl bg-brand-primary text-white flex items-center justify-center shadow-xs">
@@ -28,11 +22,9 @@ export default function StaffLayout({
           </div>
           <div>
             <h1 className="font-header font-bold text-sm text-brand-heading leading-tight">
-              Admas Attendant Console
+              Floor Console
             </h1>
-            <p className="text-[10px] text-brand-secondary">
-              Staff Shift &amp; Table Station
-            </p>
+            <p className="text-[10px] text-brand-secondary">Table status & service</p>
           </div>
         </div>
 
@@ -53,8 +45,7 @@ export default function StaffLayout({
         </div>
       </header>
 
-      {/* Main Content */}
-      <main className="flex-1 p-4 sm:p-8 max-w-7xl w-full mx-auto">{children}</main>
+      <main className="flex-1 p-4 sm:p-8 max-w-7xl mx-auto w-full">{children}</main>
     </div>
   );
 }

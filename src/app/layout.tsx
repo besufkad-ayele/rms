@@ -31,8 +31,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={`${montserrat.variable} ${lato.variable}`}>
-      <body className="min-h-screen bg-white text-brand-primary font-nyala antialiased">
+    <html lang="en" className={`${montserrat.variable} ${lato.variable}`} suppressHydrationWarning>
+      <body className="min-h-screen bg-white text-brand-primary font-nyala antialiased" suppressHydrationWarning>
         <OfflineSyncProvider>
           <OfflineSyncBanner />
           <LanguageProvider>

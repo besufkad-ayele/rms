@@ -11,15 +11,12 @@ import {
   Users,
   Award,
   DollarSign,
-  CreditCard,
   ChefHat,
   ExternalLink,
   ShieldCheck,
   AlertCircle,
   Sparkles,
   HeartHandshake,
-  Upload,
-  Image as ImageIcon,
   X,
   Plus,
   Flame,
@@ -29,13 +26,18 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { updateStaffProfileAndPinAction } from "@/app/staff-login/actions";
+import { getCurrentSessionAction } from "@/app/rms-login/actions";
 import {
   getStaffLiveTablesAction,
-  markOrderServedAction,
-  settleTableBillAction,
+  advanceOrderStatusAction,
   claimTableAction,
-  StaffStationTable as DBStaffStationTable,
+  settleTableBillAction,
+  getOrderTicketAction,
+  OrderTicketDetail,
 } from "./actions";
+import { PaymentMethodCard, PaymentMethod } from "@/components/order/PaymentMethodCard";
+import { PrintableReceipt } from "@/components/order/PrintableReceipt";
+import { ReceiptData } from "@/lib/receipts";
 
 interface StaffStationTable {
   id?: string;
@@ -70,18 +72,19 @@ export default function StaffDashboardPage() {
   const [tableCounts, setTableCounts] = useState<{ myCount: number; totalCount: number }>({ myCount: 0, totalCount: 0 });
 
   useEffect(() => {
-    try {
-      const match = document.cookie
-        .split("; ")
-        .find((row) => row.startsWith("rms_session_user="));
-      if (match) {
-        setSessionUser(JSON.parse(decodeURIComponent(match.split("=")[1])));
-      }
-    } catch (e) {}
+    let cancelled = false;
+    async function loadSession() {
+      const session = await getCurrentSessionAction();
+      if (!cancelled) setSessionUser(session);
+    }
+    loadSession();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
-  const staffName = sessionUser?.fullName || "Michael Tadesse";
-  const staffId = sessionUser?.id || "b0000000-0000-0000-0000-000000000005";
+  const staffName = sessionUser?.fullName || "Attendant";
+  const staffId = sessionUser?.id || "";
 
   const [isCheckedIn, setIsCheckedIn] = useState<boolean>(true);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -95,7 +98,8 @@ export default function StaffDashboardPage() {
   const [myTables, setMyTables] = useState<StaffStationTable[]>([]);
 
   const loadTables = async () => {
-    const currentStaffId = sessionUser?.id || "b0000000-0000-0000-0000-000000000005";
+    const currentStaffId = sessionUser?.id;
+    if (!currentStaffId) return;
     const res = await getStaffLiveTablesAction(currentStaffId, stationFilter === "assigned");
     if (res) {
       setMyTables(res.tables || []);
@@ -128,11 +132,25 @@ export default function StaffDashboardPage() {
     },
   ]);
 
-  // Table Settlement Modal
+  const [advancingId, setAdvancingId] = useState<string>("");
   const [settleTable, setSettleTable] = useState<StaffStationTable | null>(null);
-  const [settleMethod, setSettleMethod] = useState<"cbe_birr" | "telebirr" | "cash" | "card">("cbe_birr");
-  const [settleTxRef, setSettleTxRef] = useState<string>("");
-  const [receiptImageFile, setReceiptImageFile] = useState<string | null>(null);
+  const [isSettling, setIsSettling] = useState(false);
+  const [printedReceipt, setPrintedReceipt] = useState<ReceiptData | null>(null);
+
+  // "Check order" popup — full item customization for the table
+  const [checkOrderTable, setCheckOrderTable] = useState<StaffStationTable | null>(null);
+  const [orderTicket, setOrderTicket] = useState<OrderTicketDetail | null>(null);
+  const [loadingTicket, setLoadingTicket] = useState(false);
+
+  const openCheckOrder = async (table: StaffStationTable) => {
+    if (!table.activeOrderId) return;
+    setCheckOrderTable(table);
+    setOrderTicket(null);
+    setLoadingTicket(true);
+    const ticket = await getOrderTicketAction(table.activeOrderId);
+    setOrderTicket(ticket);
+    setLoadingTicket(false);
+  };
 
   // Edit Profile & PIN Modal
   const [showEditProfileModal, setShowEditProfileModal] = useState<boolean>(false);
@@ -159,33 +177,6 @@ export default function StaffDashboardPage() {
     showToast("Training progress updated!");
   };
 
-  const handleReceiptImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setReceiptImageFile(reader.result as string);
-      };
-      reader.readAsDataURL(file);
-    }
-  };
-
-  const handleConfirmSettlement = async () => {
-    if (!settleTable) return;
-    const dbMethod = settleMethod === "card" ? "cbe_birr" : settleMethod;
-    await settleTableBillAction(
-      settleTable.code,
-      settleTable.activeOrderId,
-      dbMethod as any,
-      settleTable.billTotal || 0
-    );
-    showToast(`Table ${settleTable.code} bill settled (${settleMethod.toUpperCase()}) & cleared in database!`);
-    setSettleTable(null);
-    setReceiptImageFile(null);
-    setSettleTxRef("");
-    await loadTables();
-  };
-
   const handleUpdateProfile = async (e: React.FormEvent) => {
     e.preventDefault();
     setProfileMsg(null);
@@ -210,15 +201,45 @@ export default function StaffDashboardPage() {
     }
   };
 
+  const mapWaiterPaymentMethod = (method: PaymentMethod): "cash" | "cbe_birr" | "telebirr" => {
+    if (method === "cbe_transfer") return "cbe_birr";
+    if (method === "telegram") return "telebirr";
+    return "cash";
+  };
+
+  const handleWaiterSettle = async (method: PaymentMethod, payAccount?: string) => {
+    if (!settleTable?.activeOrderId) return;
+    setIsSettling(true);
+    const res = await settleTableBillAction(
+      settleTable.code,
+      settleTable.activeOrderId,
+      mapWaiterPaymentMethod(method),
+      settleTable.billTotal || 0,
+      payAccount?.trim() || undefined
+    );
+    setIsSettling(false);
+    if (!res.success) {
+      showToast(res.message || "Could not settle this table.");
+      return;
+    }
+    showToast(`Table ${settleTable.code} settled.`);
+    setSettleTable(null);
+    if (res.receipt) setPrintedReceipt(res.receipt);
+    await loadTables();
+  };
+
   const advanceFoodStatus = async (tableCode: string) => {
     const target = myTables.find((t) => t.code === tableCode);
-    if (target?.activeOrderId && target.foodStatus === "ready") {
-      await markOrderServedAction(target.activeOrderId);
-      showToast(`Order for Table ${tableCode} marked as SERVED!`);
-      await loadTables();
-    } else {
-      showToast(`Kitchen status for ${tableCode}: ${(target?.foodStatus || "placed").toUpperCase()}`);
+    if (!target?.activeOrderId) return;
+    setAdvancingId(tableCode);
+    const res = await advanceOrderStatusAction(target.activeOrderId);
+    setAdvancingId("");
+    if (!res.success) {
+      showToast(res.message || "Could not update kitchen status.");
+      return;
     }
+    showToast(`Table ${tableCode} → ${(res.status || "").toUpperCase()}`);
+    await loadTables();
   };
 
   const totalTips = tips.reduce((acc, t) => acc + t.amount, 0);
@@ -327,7 +348,7 @@ export default function StaffDashboardPage() {
               </span>
             </h3>
             <p className="text-xs text-brand-secondary mt-0.5">
-              Live orders, kitchen prep status, and receipt verification for {staffName}.
+              Update kitchen status here or take payment at the table. Cashier portal also available at /cashier.
             </p>
           </div>
 
@@ -453,14 +474,38 @@ export default function StaffDashboardPage() {
                             {table.activeOrder}
                           </p>
 
-                          {table.foodStatus === "ready" && (
+                          <button
+                            type="button"
+                            onClick={() => openCheckOrder(table)}
+                            className="w-full mt-1 py-1.5 rounded-button bg-bg-card border border-divider text-brand-primary font-bold text-[11px] hover:bg-bg-subtle transition flex items-center justify-center gap-1"
+                          >
+                            <FileCheck className="h-3.5 w-3.5 text-brand-accent" />
+                            <span>Check order &amp; customizations</span>
+                          </button>
+
+                          {table.foodStatus !== "served" && (
                             <button
                               type="button"
+                              disabled={advancingId === table.code}
                               onClick={() => advanceFoodStatus(table.code)}
-                              className="w-full mt-1.5 py-1.5 rounded-button bg-status-ready text-white font-bold text-xs hover:opacity-90 transition flex items-center justify-center gap-1 shadow-xs"
+                              className="w-full mt-1.5 py-1.5 rounded-button bg-brand-primary text-white font-bold text-xs hover:opacity-90 transition flex items-center justify-center gap-1 shadow-xs disabled:opacity-60"
                             >
                               <CheckCircle2 className="h-3.5 w-3.5" />
-                              <span>Food Ready • Mark as Served</span>
+                              <span>
+                                {table.foodStatus === "placed" && "Start cooking"}
+                                {table.foodStatus === "preparing" && "Mark ready"}
+                                {table.foodStatus === "ready" && "Mark served"}
+                                {!table.foodStatus && "Advance status"}
+                              </span>
+                            </button>
+                          )}
+                          {table.foodStatus === "served" && (
+                            <button
+                              type="button"
+                              onClick={() => setSettleTable(table)}
+                              className="w-full mt-1.5 py-1.5 rounded-button bg-status-free text-white font-bold text-xs hover:opacity-90 transition"
+                            >
+                              Served — take payment
                             </button>
                           )}
                         </div>
@@ -487,23 +532,20 @@ export default function StaffDashboardPage() {
                     )}
                   </div>
 
-                  {/* Bottom Settlement Row */}
                   {isOccupied && (
-                    <div className="pt-3 border-t border-divider flex items-center justify-between mt-2">
+                    <div className="pt-3 border-t border-divider mt-2 flex items-center justify-between gap-2">
                       <div>
                         <p className="text-[10px] text-brand-secondary uppercase">Current Bill</p>
                         <p className="font-header text-base font-bold text-brand-heading">
                           ETB {(table.billTotal || 0).toLocaleString()}
                         </p>
                       </div>
-
                       <button
                         type="button"
                         onClick={() => setSettleTable(table)}
-                        className="rounded-button bg-status-free px-3.5 py-1.5 text-xs font-bold text-white shadow-xs hover:opacity-90 transition cursor-pointer flex items-center gap-1"
+                        className="rounded-button bg-brand-accent px-3 py-1.5 text-[11px] font-bold text-white shrink-0"
                       >
-                        <Upload className="h-3.5 w-3.5" />
-                        <span>Settle &amp; Clear</span>
+                        Take payment
                       </button>
                     </div>
                   )}
@@ -566,128 +608,6 @@ export default function StaffDashboardPage() {
           ))}
         </div>
       </div>
-
-      {/* Modal 2: Table Settlement & Receipt Photo Upload */}
-      {settleTable && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in">
-          <div className="bg-white rounded-card max-w-md w-full p-6 space-y-5 border border-divider shadow-elevated relative">
-            <button
-              onClick={() => setSettleTable(null)}
-              className="absolute top-4 right-4 text-brand-secondary hover:text-brand-primary p-1 rounded-button hover:bg-bg-subtle transition"
-            >
-              <X className="h-5 w-5" />
-            </button>
-
-            <div className="flex items-center gap-3">
-              <div className="h-10 w-10 rounded-xl bg-status-free-bg text-status-free flex items-center justify-center">
-                <Upload className="h-6 w-6" />
-              </div>
-              <div>
-                <h3 className="font-header text-base font-bold text-brand-heading">
-                  Settle Table {settleTable.code}
-                </h3>
-                <p className="text-xs text-brand-secondary">
-                  Total Bill: ETB {(settleTable.billTotal || 0).toLocaleString()}
-                </p>
-              </div>
-            </div>
-
-            <div className="space-y-4 text-xs">
-              <div>
-                <label className="text-[10px] font-bold uppercase text-brand-secondary">
-                  Settlement Payment Channel
-                </label>
-                <div className="grid grid-cols-2 gap-2 mt-1">
-                  {[
-                    { key: "cbe_birr", label: "CBE Birr / Bank" },
-                    { key: "telebirr", label: "Telebirr" },
-                    { key: "cash", label: "Cash" },
-                    { key: "card", label: "POS Card Slip" },
-                  ].map((m) => (
-                    <button
-                      key={m.key}
-                      type="button"
-                      onClick={() => setSettleMethod(m.key as any)}
-                      className={cn(
-                        "py-2 px-3 rounded-button text-xs font-bold border transition cursor-pointer text-left",
-                        settleMethod === m.key
-                          ? "bg-brand-primary text-white border-brand-primary"
-                          : "bg-bg-subtle border-divider text-brand-primary"
-                      )}
-                    >
-                      {m.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div>
-                <label className="text-[10px] font-bold uppercase text-brand-secondary">
-                  Transaction Reference Number
-                </label>
-                <input
-                  type="text"
-                  placeholder="e.g. FT2608159012"
-                  value={settleTxRef}
-                  onChange={(e) => setSettleTxRef(e.target.value)}
-                  className="w-full mt-1 px-3 py-2 rounded-button bg-bg-subtle border border-divider text-xs text-brand-primary focus:outline-none"
-                />
-              </div>
-
-              {/* Attach Paid Receipt / Transaction Image Photo */}
-              <div>
-                <label className="text-[10px] font-bold uppercase text-brand-secondary flex items-center justify-between">
-                  <span>Attach Paid Receipt / Screenshot Photo</span>
-                  <span className="text-brand-accent">(Optional)</span>
-                </label>
-
-                <div className="mt-1 border-2 border-dashed border-divider hover:border-brand-accent rounded-card p-4 text-center bg-bg-subtle transition">
-                  {receiptImageFile ? (
-                    <div className="space-y-2">
-                      <img
-                        src={receiptImageFile}
-                        alt="Receipt preview"
-                        className="h-28 w-auto mx-auto object-cover rounded border border-divider"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setReceiptImageFile(null)}
-                        className="text-[11px] font-bold text-status-danger hover:underline"
-                      >
-                        Remove Photo
-                      </button>
-                    </div>
-                  ) : (
-                    <label className="cursor-pointer space-y-1 block">
-                      <ImageIcon className="h-6 w-6 text-brand-secondary mx-auto" />
-                      <p className="text-xs font-bold text-brand-primary">
-                        Tap to Capture or Upload Receipt Photo
-                      </p>
-                      <p className="text-[10px] text-brand-secondary">
-                        PNG, JPG, camera photo up to 5MB
-                      </p>
-                      <input
-                        type="file"
-                        accept="image/*"
-                        onChange={handleReceiptImageUpload}
-                        className="hidden"
-                      />
-                    </label>
-                  )}
-                </div>
-              </div>
-
-              <button
-                type="button"
-                onClick={handleConfirmSettlement}
-                className="w-full py-2.5 rounded-button bg-status-free hover:opacity-90 text-white font-bold text-xs transition cursor-pointer shadow-md"
-              >
-                Confirm Payment &amp; Clear Table
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Modal 3: Edit Profile & PIN Modal */}
       {showEditProfileModal && (
@@ -775,6 +695,159 @@ export default function StaffDashboardPage() {
                 Save Changes &amp; Update PIN
               </button>
             </form>
+          </div>
+        </div>
+      )}
+
+      {checkOrderTable && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-white rounded-card max-w-lg w-full p-5 space-y-4 border border-divider shadow-elevated relative">
+            <button
+              type="button"
+              onClick={() => {
+                setCheckOrderTable(null);
+                setOrderTicket(null);
+              }}
+              className="absolute top-4 right-4 text-brand-secondary hover:text-brand-primary p-1"
+            >
+              <X className="h-5 w-5" />
+            </button>
+
+            <div className="flex items-center gap-3">
+              <div className="h-10 w-10 rounded-xl bg-brand-primary text-white flex items-center justify-center">
+                <FileCheck className="h-5 w-5" />
+              </div>
+              <div>
+                <h3 className="font-header text-base font-bold text-brand-heading">
+                  Order — Table {checkOrderTable.code}
+                </h3>
+                <p className="text-xs text-brand-secondary">
+                  Ingredients, extras &amp; chef notes as sent to the kitchen
+                </p>
+              </div>
+            </div>
+
+            {loadingTicket ? (
+              <div className="py-10 text-center text-xs text-brand-secondary">
+                Loading order…
+              </div>
+            ) : !orderTicket || orderTicket.items.length === 0 ? (
+              <div className="py-10 text-center text-xs text-brand-secondary">
+                No items found for this order.
+              </div>
+            ) : (
+              <div className="space-y-3 max-h-[60vh] overflow-y-auto">
+                {orderTicket.customerNote && (
+                  <div className="rounded-button bg-status-occupied/10 border border-status-occupied/30 p-2.5 text-xs text-status-occupied font-semibold">
+                    Table note: &ldquo;{orderTicket.customerNote}&rdquo;
+                  </div>
+                )}
+
+                {orderTicket.items.map((item, idx) => {
+                  const hasCustomization =
+                    item.omittedIngredients.length > 0 ||
+                    item.extras.length > 0 ||
+                    !!item.chefNote;
+                  return (
+                    <div
+                      key={idx}
+                      className="rounded-card border border-divider bg-bg-subtle p-3 space-y-2"
+                    >
+                      <div className="flex items-center gap-2">
+                        <span className="h-6 w-6 rounded-pill bg-brand-accent text-white font-bold text-xs flex items-center justify-center shrink-0">
+                          {item.qty}x
+                        </span>
+                        <span className="font-bold text-sm text-brand-heading">
+                          {item.name}
+                        </span>
+                      </div>
+
+                      {item.omittedIngredients.length > 0 && (
+                        <div className="flex flex-wrap gap-1">
+                          {item.omittedIngredients.map((ing, i) => (
+                            <span
+                              key={i}
+                              className="inline-flex items-center rounded-pill bg-status-danger-bg border border-status-danger/40 px-2 py-0.5 text-[10px] font-bold text-status-danger uppercase"
+                            >
+                              No {ing}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+
+                      {item.extras.length > 0 && (
+                        <div className="flex flex-wrap gap-1">
+                          {item.extras.map((ex, i) => (
+                            <span
+                              key={i}
+                              className="inline-flex items-center rounded-pill bg-status-free-bg border border-status-free/40 px-2 py-0.5 text-[10px] font-bold text-status-free uppercase"
+                            >
+                              + {ex.name}
+                              {ex.price > 0 && ` (ETB ${ex.price})`}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+
+                      {item.chefNote && (
+                        <p className="text-xs text-brand-primary italic">
+                          Note: &ldquo;{item.chefNote}&rdquo;
+                        </p>
+                      )}
+
+                      {!hasCustomization && (
+                        <p className="text-[11px] text-brand-secondary">
+                          Standard preparation — no customization.
+                        </p>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            <button
+              type="button"
+              onClick={() => {
+                setCheckOrderTable(null);
+                setOrderTicket(null);
+              }}
+              className="w-full py-2.5 rounded-button bg-brand-primary text-white font-bold text-xs hover:bg-brand-heading transition"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      )}
+
+      {settleTable && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-white rounded-card max-w-lg w-full p-5 space-y-3 border border-divider shadow-elevated relative">
+            <button
+              type="button"
+              onClick={() => setSettleTable(null)}
+              className="absolute top-4 right-4 text-brand-secondary hover:text-brand-primary p-1"
+            >
+              <X className="h-5 w-5" />
+            </button>
+            <PaymentMethodCard
+              totalAmount={settleTable.billTotal || 0}
+              tableCode={settleTable.code}
+              onPaymentConfirmed={(method, payAccount) => handleWaiterSettle(method, payAccount)}
+              isProcessing={isSettling}
+            />
+          </div>
+        </div>
+      )}
+
+      {printedReceipt && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-white rounded-card max-w-md w-full p-5 space-y-3 border border-divider shadow-elevated">
+            <PrintableReceipt
+              receipt={printedReceipt}
+              continueLabel="Close"
+              onContinue={() => setPrintedReceipt(null)}
+            />
           </div>
         </div>
       )}
