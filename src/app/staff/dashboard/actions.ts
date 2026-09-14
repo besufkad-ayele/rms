@@ -288,7 +288,7 @@ export async function settleTableBillAction(
             confirmed_at: new Date().toISOString(),
             method: dbMethod,
             transaction_reference:
-              transactionReference?.trim() || pending.transaction_reference || null,
+              transactionReference?.trim() || pending?.transaction_reference || null,
           })
           .eq("id", paymentId);
       } else {
