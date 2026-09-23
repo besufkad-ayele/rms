@@ -36,17 +36,7 @@ async function getSupabase() {
 }
 
 function destinationForStaff(staff: Staff): string {
-  if (staff.role === "admin") return "/admin/dashboard";
-  if (staff.role === "manager") {
-    if (
-      staff.permissions?.can_manage_inventory &&
-      !staff.permissions?.can_view_finance &&
-      !staff.permissions?.can_manage_staff
-    ) {
-      return "/admin/inventory";
-    }
-    return "/admin/dashboard";
-  }
+  if (staff.role === "admin" || staff.role === "manager") return "/admin/modules";
   if (staff.role === "cook") return "/chef/dashboard";
   if (staff.role === "cashier" || staff.role === "host") return "/cashier";
   return "/staff/dashboard";

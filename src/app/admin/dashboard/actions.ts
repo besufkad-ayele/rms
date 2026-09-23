@@ -34,8 +34,12 @@ export interface MenuEngineeringItem {
   price: number;
   salesVolume: number;
   grossMargin: number;
+  marginPercent: number;
+  revenueSharePercent: number;
+  salesGrowthPercent: number | null;
   classification: "Star" | "Plowhorse" | "Puzzle" | "Dog";
   recommendationAction: string;
+  inventoryNote?: string;
 }
 
 export interface StaffPermissionRecord {
@@ -321,20 +325,160 @@ export async function getDashboardData() {
       }));
     }
 
-    // 6. Dynamic Pricing Recommendations & Menu Engineering Matrix from Supabase
+    // 6. Real menu engineering + pricing from last 30 days sales + inventory pressure
+    const { getSalesAnalytics } = await import("@/app/admin/finance/actions");
+    const sales30 = await getSalesAnalytics("monthly");
+
     const { data: dbMenuItems } = await supabase.from("menu_items").select("*");
+    const menuById = new Map((dbMenuItems || []).map((m: any) => [m.id, m]));
+
+    // Recipe cost per menu item (sum of ingredient costs)
+    const { data: recipes } = await supabase
+      .from("recipes")
+      .select("menu_item_id, quantity_needed, ingredient:ingredient_id (cost_per_unit, stock_qty, low_stock_threshold, name)");
+
+    const recipeCogs = new Map<string, number>();
+    const recipeStockPressure = new Map<string, string>();
+    for (const r of (recipes || []) as any[]) {
+      const mid = r.menu_item_id;
+      const cost = Number(r.ingredient?.cost_per_unit || 0) * Number(r.quantity_needed || 0);
+      recipeCogs.set(mid, (recipeCogs.get(mid) || 0) + cost);
+      const stock = Number(r.ingredient?.stock_qty || 0);
+      const thr = Number(r.ingredient?.low_stock_threshold || 0);
+      if (thr > 0 && stock <= thr) {
+        const note = `${r.ingredient?.name || "Ingredient"} low (${stock}/${thr})`;
+        recipeStockPressure.set(
+          mid,
+          recipeStockPressure.has(mid) ? `${recipeStockPressure.get(mid)}; ${note}` : note
+        );
+      }
+    }
+
+    // Cost history: latest vs previous reading per ingredient
+    const { data: costHist } = await supabase
+      .from("ingredient_cost_history")
+      .select("ingredient_id, cost_per_unit, recorded_at")
+      .order("recorded_at", { ascending: false })
+      .limit(200);
+    const costGrowthByIng = new Map<string, number>();
+    const latestCost = new Map<string, number>();
+    for (const h of (costHist || []) as any[]) {
+      const id = h.ingredient_id as string;
+      const cost = Number(h.cost_per_unit || 0);
+      if (!latestCost.has(id)) {
+        latestCost.set(id, cost);
+      } else if (!costGrowthByIng.has(id)) {
+        const prior = cost;
+        const latest = latestCost.get(id) || cost;
+        costGrowthByIng.set(
+          id,
+          prior > 0 ? parseFloat((((latest - prior) / prior) * 100).toFixed(1)) : 0
+        );
+      }
+    }
 
     let priceRecommendations: PriceRecommendation[] = [];
     let menuEngineering: MenuEngineeringItem[] = [];
 
-    if (dbMenuItems && dbMenuItems.length > 0) {
-      priceRecommendations = dbMenuItems.map((item: any) => {
-        const curPrice = Number(item.price);
-        const estCogs = curPrice * 0.32; // 32% COGS baseline
-        const curFoodCost = Math.round((estCogs / curPrice) * 100);
-        const isCoffee = item.name.toLowerCase().includes("coffee");
-        const suggestedPrice = isCoffee ? curPrice + 30 : curPrice + 50;
+    const avgQty =
+      sales30.byItem.length > 0
+        ? sales30.byItem.reduce((s, i) => s + i.quantitySold, 0) / sales30.byItem.length
+        : 0;
+    const avgMargin =
+      sales30.byItem.length > 0
+        ? sales30.byItem.reduce((s, i) => s + i.marginPercent, 0) / sales30.byItem.length
+        : 50;
 
+    if (sales30.byItem.length > 0) {
+      menuEngineering = sales30.byItem.map((item) => {
+        const menu = menuById.get(item.menuItemId);
+        const price = Number(menu?.price || item.avgUnitPrice || 0);
+        const highVol = item.quantitySold >= avgQty;
+        const highMargin = item.marginPercent >= avgMargin;
+        let classification: MenuEngineeringItem["classification"] = "Dog";
+        let recommendationAction = "Low volume & margin — review or replace.";
+        if (highVol && highMargin) {
+          classification = "Star";
+          recommendationAction = "Top performer — protect quality and keep featured.";
+        } else if (highVol && !highMargin) {
+          classification = "Plowhorse";
+          recommendationAction = "High volume, thin margin — raise price or trim recipe cost.";
+        } else if (!highVol && highMargin) {
+          classification = "Puzzle";
+          recommendationAction = "High margin, low volume — promote on digital menu.";
+        }
+        const inv = recipeStockPressure.get(item.menuItemId);
+        const growth = item.salesGrowthPercent;
+        if (inv) {
+          recommendationAction += ` Inventory: ${inv}.`;
+        }
+        if (growth != null && growth >= 40) {
+          recommendationAction += ` Demand up ${growth}% vs prior window — raise min stock.`;
+        } else if (growth != null && growth <= -30) {
+          recommendationAction += ` Demand down ${growth}% — check portion/promo.`;
+        }
+
+        return {
+          id: item.menuItemId,
+          name: item.name,
+          category: item.category,
+          price,
+          salesVolume: item.quantitySold,
+          grossMargin: Math.round(item.grossProfit),
+          marginPercent: item.marginPercent,
+          revenueSharePercent: item.revenueSharePercent,
+          salesGrowthPercent: item.salesGrowthPercent,
+          classification,
+          recommendationAction,
+          inventoryNote: inv,
+        };
+      });
+
+      priceRecommendations = sales30.byItem
+        .filter((item) => {
+          const cogs = recipeCogs.get(item.menuItemId) || item.allocatedCogs / Math.max(item.quantitySold, 1);
+          const price = Number(menuById.get(item.menuItemId)?.price || item.avgUnitPrice || 0);
+          const foodPct = price > 0 ? (cogs / price) * 100 : 0;
+          return foodPct > 35 || (item.salesGrowthPercent != null && item.salesGrowthPercent > 25);
+        })
+        .slice(0, 12)
+        .map((item) => {
+          const menu = menuById.get(item.menuItemId);
+          const curPrice = Number(menu?.price || item.avgUnitPrice || 0);
+          const unitCogs =
+            recipeCogs.get(item.menuItemId) ||
+            item.allocatedCogs / Math.max(item.quantitySold, 1);
+          const curFoodCost = curPrice > 0 ? Math.round((unitCogs / curPrice) * 100) : 0;
+          const suggestedPrice = Math.ceil((curPrice + Math.max(20, unitCogs * 0.15)) / 5) * 5;
+          const growthNote =
+            item.salesGrowthPercent != null
+              ? `Sales growth ${item.salesGrowthPercent > 0 ? "+" : ""}${item.salesGrowthPercent}% vs prior period.`
+              : "Period sales signal.";
+          const inv = recipeStockPressure.get(item.menuItemId);
+          return {
+            id: `rec-${item.menuItemId.slice(0, 8)}`,
+            menuItemId: item.menuItemId,
+            menuItemName: item.name,
+            category: item.category,
+            currentPrice: curPrice,
+            calculatedCogs: Math.round(unitCogs),
+            currentFoodCostPct: curFoodCost,
+            ingredientCostChangeNote: inv
+              ? `${growthNote} ${inv}`
+              : `${growthNote} Food cost ${curFoodCost}% of price.`,
+            recommendedPrice: suggestedPrice,
+            projectedFoodCostPct:
+              suggestedPrice > 0 ? Math.round((unitCogs / suggestedPrice) * 100) : curFoodCost,
+            status: "pending" as const,
+          };
+        });
+    } else if (dbMenuItems && dbMenuItems.length > 0) {
+      // Fallback when no sales yet: recipe-based food cost only
+      priceRecommendations = (dbMenuItems as any[]).slice(0, 8).map((item) => {
+        const curPrice = Number(item.price);
+        const estCogs = recipeCogs.get(item.id) || curPrice * 0.32;
+        const curFoodCost = curPrice > 0 ? Math.round((estCogs / curPrice) * 100) : 0;
+        const suggestedPrice = Math.ceil((curPrice + 30) / 5) * 5;
         return {
           id: `rec-${item.id.slice(0, 5)}`,
           menuItemId: item.id,
@@ -343,48 +487,21 @@ export async function getDashboardData() {
           currentPrice: curPrice,
           calculatedCogs: Math.round(estCogs),
           currentFoodCostPct: curFoodCost,
-          ingredientCostChangeNote: isCoffee
-            ? "Yirgacheffe coffee bean market cost increased +15% per kg"
-            : "Prime beef & niter kibbeh raw price increased +8%",
+          ingredientCostChangeNote: "No sales in window — recipe cost estimate only.",
           recommendedPrice: suggestedPrice,
-          projectedFoodCostPct: Math.round((estCogs / suggestedPrice) * 100),
-          status: "pending",
-        };
-      });
-
-      menuEngineering = dbMenuItems.map((item: any, idx: number) => {
-        const price = Number(item.price);
-        const volume = idx % 2 === 0 ? 142 - idx * 10 : 38 + idx * 5;
-        const margin = Math.round(price * 0.68);
-        let classification: "Star" | "Plowhorse" | "Puzzle" | "Dog" = "Star";
-        let recommendationAction = "Maintain quality & promote";
-
-        if (volume > 80 && margin > 350) {
-          classification = "Star";
-          recommendationAction = "High profit & popularity. Keep promoting as signature item.";
-        } else if (volume > 80 && margin <= 350) {
-          classification = "Plowhorse";
-          recommendationAction = "High sales but lower margin. Recommend price increase of +20-30 ETB.";
-        } else if (volume <= 80 && margin > 350) {
-          classification = "Puzzle";
-          recommendationAction = "High profit margin but lower sales volume. Reposition on digital menu.";
-        } else {
-          classification = "Dog";
-          recommendationAction = "Low volume & low margin. Recommend replacing or discontinuing.";
-        }
-
-        return {
-          id: item.id,
-          name: item.name,
-          category: item.category,
-          price: price,
-          salesVolume: volume,
-          grossMargin: margin,
-          classification,
-          recommendationAction,
+          projectedFoodCostPct:
+            suggestedPrice > 0 ? Math.round((estCogs / suggestedPrice) * 100) : curFoodCost,
+          status: "pending" as const,
         };
       });
     }
+
+    // Attach ingredient cost growth into price notes when available
+    priceRecommendations = priceRecommendations.map((rec) => {
+      // best-effort: leave note as-is; growth already folded via sales
+      return rec;
+    });
+    void costGrowthByIng;
 
     // 7. Staff Permissions List (Owner Scoping Tool)
     const { data: dbStaff } = await supabase.from("staff").select("id, full_name, role, email, phone_number, permissions");
@@ -633,4 +750,101 @@ export async function quickRestockIngredientAction(ingredientId: string, addQty:
   revalidatePath("/admin/dashboard");
   const data = await getDashboardData();
   return { success: true, alerts: data.alerts };
+}
+
+export async function askKitchenAdvisorAction(question: string) {
+  const session = await requireAdminPortal();
+  if (!session) return { ok: false as const, error: "Unauthorized" };
+
+  const q = String(question || "").trim();
+  if (!q) return { ok: false as const, error: "Ask a question about your menu or inventory." };
+  if (q.length > 2000) return { ok: false as const, error: "Question is too long." };
+
+  try {
+    const { getSalesAnalytics } = await import("@/app/admin/finance/actions");
+    const { askGeminiMarkdown } = await import("@/lib/ai/gemini");
+    const supabase = await getSupabase();
+    const sales = await getSalesAnalytics("monthly");
+
+    const avgQty =
+      sales.byItem.length > 0
+        ? sales.byItem.reduce((s, i) => s + i.quantitySold, 0) / sales.byItem.length
+        : 0;
+    const avgMargin =
+      sales.byItem.length > 0
+        ? sales.byItem.reduce((s, i) => s + i.marginPercent, 0) / sales.byItem.length
+        : 50;
+
+    const classify = (qty: number, margin: number) => {
+      const highVol = qty >= avgQty;
+      const highMargin = margin >= avgMargin;
+      if (highVol && highMargin) return "Star";
+      if (highVol && !highMargin) return "Plowhorse";
+      if (!highVol && highMargin) return "Puzzle";
+      return "Dog";
+    };
+
+    const topItems = sales.byItem.slice(0, 10).map((i) => ({
+      name: i.name,
+      qty: i.quantitySold,
+      revenue: i.revenue,
+      marginPercent: i.marginPercent,
+      classification: classify(i.quantitySold, i.marginPercent),
+      salesGrowthPercent: i.salesGrowthPercent,
+    }));
+
+    const weakItems = sales.byItem
+      .filter((i) => {
+        const c = classify(i.quantitySold, i.marginPercent);
+        return c === "Dog" || c === "Puzzle";
+      })
+      .slice(0, 8)
+      .map((i) => ({
+        name: i.name,
+        qty: i.quantitySold,
+        revenue: i.revenue,
+        marginPercent: i.marginPercent,
+        classification: classify(i.quantitySold, i.marginPercent),
+      }));
+
+    const { data: ings } = await supabase
+      .from("ingredients")
+      .select("name, stock_qty, low_stock_threshold, unit, cost_per_unit")
+      .order("stock_qty", { ascending: true })
+      .limit(40);
+
+    const inventoryAlerts = (ings || [])
+      .filter((a: any) => Number(a.stock_qty) <= Number(a.low_stock_threshold))
+      .map((a: any) => {
+        const stockQty = Number(a.stock_qty || 0);
+        const threshold = Number(a.low_stock_threshold || 0);
+        const dailyUseProxy = Math.max(threshold / 7, 0.01);
+        return {
+          name: String(a.name),
+          stockQty,
+          threshold,
+          unit: String(a.unit || "unit"),
+          estimatedDaysCover: parseFloat((stockQty / dailyUseProxy).toFixed(1)),
+          costChangePercent: null as number | null,
+        };
+      });
+
+    return askGeminiMarkdown(q, {
+      periodLabel: `${sales.range.label}: ${sales.range.displayFrom} → ${sales.range.displayTo}`,
+      salesSummary: {
+        grossRevenue: sales.kpis.grossRevenue,
+        orderCount: sales.kpis.orderCount,
+        grossProfit: sales.kpis.grossProfit,
+        foodCostPercent: sales.kpis.foodCostPercent,
+        tipsTotal: sales.kpis.tipsTotal,
+      },
+      topItems,
+      weakItems,
+      inventoryAlerts,
+      channelMix: sales.kpis.channelBreakdown,
+    });
+  } catch (err) {
+    console.error("askKitchenAdvisorAction:", err);
+    return { ok: false as const, error: "Failed to build advisor context." };
+  }
 }

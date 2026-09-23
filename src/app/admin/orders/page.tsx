@@ -99,7 +99,7 @@ export default function AdminOrdersPage() {
   };
 
   return (
-    <div className="space-y-8 pb-16">
+    <div className="space-y-6 pb-10 sm:space-y-8 sm:pb-16">
       {/* Toast Alert */}
       {toastMessage && (
         <div className="fixed bottom-6 right-6 z-50 flex items-center gap-3 rounded-card bg-brand-primary px-4 py-3 text-white shadow-elevated transition-all animate-in fade-in slide-in-from-bottom-4">
@@ -251,7 +251,7 @@ export default function AdminOrdersPage() {
         </div>
 
         {/* Search Box */}
-        <div className="relative max-w-xs w-full">
+        <div className="relative w-full max-w-xs md:w-auto">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-brand-secondary" />
           <input
             type="text"
@@ -265,9 +265,9 @@ export default function AdminOrdersPage() {
 
       {/* PIPELINE KANBAN VIEW */}
       {viewMode === "kanban" && (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 items-start">
+        <div className="no-scrollbar -mx-4 flex snap-x snap-mandatory items-start gap-4 overflow-x-auto px-4 pb-2 md:mx-0 md:grid md:snap-none md:grid-cols-2 md:overflow-visible md:px-0 lg:grid-cols-4">
           {/* Column 1: Placed */}
-          <div className="rounded-card bg-bg-subtle/80 p-4 border border-divider space-y-3">
+          <div className="w-[85vw] max-w-sm shrink-0 snap-center rounded-card border border-divider bg-bg-subtle/80 p-4 space-y-3 md:w-auto md:max-w-none md:shrink">
             <div className="flex items-center justify-between pb-2 border-b border-divider">
               <span className="flex items-center gap-2 font-header text-xs font-bold uppercase text-brand-heading">
                 <span className="h-2 w-2 rounded-full bg-status-occupied" />
@@ -295,7 +295,7 @@ export default function AdminOrdersPage() {
           </div>
 
           {/* Column 2: Preparing */}
-          <div className="rounded-card bg-bg-subtle/80 p-4 border border-divider space-y-3">
+          <div className="w-[85vw] max-w-sm shrink-0 snap-center rounded-card border border-divider bg-bg-subtle/80 p-4 space-y-3 md:w-auto md:max-w-none md:shrink">
             <div className="flex items-center justify-between pb-2 border-b border-divider">
               <span className="flex items-center gap-2 font-header text-xs font-bold uppercase text-brand-heading">
                 <span className="h-2 w-2 rounded-full bg-status-kitchen" />
@@ -323,7 +323,7 @@ export default function AdminOrdersPage() {
           </div>
 
           {/* Column 3: Ready for Table */}
-          <div className="rounded-card bg-bg-subtle/80 p-4 border border-divider space-y-3">
+          <div className="w-[85vw] max-w-sm shrink-0 snap-center rounded-card border border-divider bg-bg-subtle/80 p-4 space-y-3 md:w-auto md:max-w-none md:shrink">
             <div className="flex items-center justify-between pb-2 border-b border-divider">
               <span className="flex items-center gap-2 font-header text-xs font-bold uppercase text-brand-heading">
                 <span className="h-2 w-2 rounded-full bg-status-free" />
@@ -351,7 +351,7 @@ export default function AdminOrdersPage() {
           </div>
 
           {/* Column 4: Served / Settling */}
-          <div className="rounded-card bg-bg-subtle/80 p-4 border border-divider space-y-3">
+          <div className="w-[85vw] max-w-sm shrink-0 snap-center rounded-card border border-divider bg-bg-subtle/80 p-4 space-y-3 md:w-auto md:max-w-none md:shrink">
             <div className="flex items-center justify-between pb-2 border-b border-divider">
               <span className="flex items-center gap-2 font-header text-xs font-bold uppercase text-brand-heading">
                 <span className="h-2 w-2 rounded-full bg-brand-primary" />

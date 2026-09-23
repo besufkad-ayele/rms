@@ -58,12 +58,22 @@ export async function requireStaffTerminal(): Promise<SessionUser | null> {
 }
 
 export async function requirePermission(
-  permission: keyof StaffPermissions
+  permission: Exclude<keyof StaffPermissions, "modules">
 ): Promise<SessionUser | null> {
   const session = await requireAdminPortal();
   if (!session) return null;
   if (session.role === "admin") return session;
   if (session.permissions?.[permission]) return session;
+
+  const mods = session.permissions?.modules;
+  if (
+    (permission === "can_manage_staff" || permission === "can_manage_shifts") &&
+    mods?.hr
+  ) {
+    return session;
+  }
+  if (permission === "can_manage_inventory" && mods?.operations) return session;
+  if (permission === "can_view_finance" && mods?.sales) return session;
   return null;
 }
 

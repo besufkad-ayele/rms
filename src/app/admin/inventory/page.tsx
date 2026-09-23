@@ -17,6 +17,7 @@ import {
   X,
   ChevronRight,
   TrendingUp,
+  History,
   Scale,
   Sparkles,
 } from "lucide-react";
@@ -51,6 +52,8 @@ export default function InventoryManagementPage() {
 
   const [selectedRestockItem, setSelectedRestockItem] = useState<MockIngredientItem | null>(null);
   const [restockAmount, setRestockAmount] = useState<number>(10);
+  const [restockCost, setRestockCost] = useState<number>(0);
+  const [historyItem, setHistoryItem] = useState<MockIngredientItem | null>(null);
 
   // New Ingredient Form State
   const [newIngName, setNewIngName] = useState<string>("");
@@ -109,7 +112,11 @@ export default function InventoryManagementPage() {
   const handleRestockSubmit = () => {
     if (!selectedRestockItem) return;
     startTransition(async () => {
-      const res = await restockIngredientAction(selectedRestockItem.id, restockAmount);
+      const res = await restockIngredientAction(
+        selectedRestockItem.id,
+        restockAmount,
+        restockCost,
+      );
       if (res.success) {
         setIngredients(res.ingredients);
         setShowRestockModal(false);
@@ -158,7 +165,7 @@ export default function InventoryManagementPage() {
   };
 
   return (
-    <div className="space-y-8 pb-16">
+    <div className="space-y-6 pb-10 sm:space-y-8 sm:pb-16">
       {/* Toast Alert */}
       {toastMessage && (
         <div className="fixed bottom-6 right-6 z-50 flex items-center gap-3 rounded-card bg-brand-primary px-4 py-3 text-white shadow-elevated transition-all animate-in fade-in slide-in-from-bottom-4">
@@ -343,7 +350,7 @@ export default function InventoryManagementPage() {
           </div>
 
           {/* Table */}
-          <div className="overflow-x-auto">
+          <div className="admin-scroll-x">
             <table className="w-full text-left text-xs">
               <thead>
                 <tr className="border-b border-divider text-brand-secondary uppercase font-semibold text-[10px] tracking-wider">
@@ -398,7 +405,20 @@ export default function InventoryManagementPage() {
                       </td>
 
                       <td className="py-3.5 font-semibold text-brand-primary">
-                        ETB {ing.costPerUnit.toFixed(2)}
+                        <div className="flex items-center justify-between gap-1">
+                          <span>ETB {ing.costPerUnit.toFixed(2)}</span>
+                          <button
+                            type="button"
+                            title="Cost history"
+                            onClick={() => setHistoryItem(ing)}
+                            className="rounded-button border border-divider bg-bg-card p-1 text-brand-accent hover:bg-bg-active"
+                          >
+                            <History className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                        <p className="mt-0.5 text-[10px] font-normal text-brand-secondary">
+                          {(ing.costHistory || []).length} past value(s)
+                        </p>
                       </td>
 
                       <td className="py-3.5 font-bold text-brand-heading">
@@ -414,6 +434,7 @@ export default function InventoryManagementPage() {
                           onClick={() => {
                             setSelectedRestockItem(ing);
                             setRestockAmount(10);
+                            setRestockCost(ing.costPerUnit);
                             setShowRestockModal(true);
                           }}
                           className="rounded-button bg-bg-card px-2.5 py-1 text-[11px] font-bold text-brand-accent border border-divider hover:bg-bg-active transition"
@@ -515,7 +536,7 @@ export default function InventoryManagementPage() {
             </button>
           </div>
 
-          <div className="overflow-x-auto">
+          <div className="admin-scroll-x">
             <table className="w-full text-left text-xs">
               <thead>
                 <tr className="border-b border-divider text-brand-secondary uppercase font-semibold text-[10px] tracking-wider">
@@ -733,6 +754,18 @@ export default function InventoryManagementPage() {
                   className="w-full rounded-button border border-divider bg-bg-subtle p-2 text-xs text-brand-primary"
                 />
               </div>
+              <div>
+                <label className="font-semibold text-brand-primary block mb-1">
+                  Cost per unit (ETB) — keeps history when changed:
+                </label>
+                <input
+                  type="number"
+                  step="0.01"
+                  value={restockCost}
+                  onChange={(e) => setRestockCost(parseFloat(e.target.value) || 0)}
+                  className="w-full rounded-button border border-divider bg-bg-subtle p-2 text-xs text-brand-primary"
+                />
+              </div>
             </div>
 
             <div className="flex items-center gap-2 pt-2">
@@ -839,6 +872,50 @@ export default function InventoryManagementPage() {
           </div>
         </div>
       )}
+
+      {historyItem ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4">
+          <div className="w-full max-w-md rounded-card bg-white p-6 shadow-elevated border border-divider space-y-4">
+            <div className="flex items-center justify-between border-b border-divider pb-3">
+              <h3 className="font-header text-lg font-bold text-brand-heading">
+                Cost history — {historyItem.name}
+              </h3>
+              <button
+                type="button"
+                onClick={() => setHistoryItem(null)}
+                className="p-1 rounded-button text-brand-secondary hover:bg-bg-subtle"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <ul className="max-h-72 space-y-2 overflow-auto text-xs">
+              {(historyItem.costHistory || []).map((h, idx) => (
+                <li
+                  key={`${h.recordedAt}-${idx}`}
+                  className="flex justify-between rounded-button bg-bg-subtle px-3 py-2"
+                >
+                  <span>
+                    ETB {h.cost.toFixed(2)}
+                    {h.note ? (
+                      <span className="block text-[10px] text-brand-secondary">{h.note}</span>
+                    ) : null}
+                  </span>
+                  <span className="text-brand-secondary">
+                    {new Date(h.recordedAt).toLocaleDateString("en-ET")}
+                  </span>
+                </li>
+              ))}
+            </ul>
+            <button
+              type="button"
+              onClick={() => setHistoryItem(null)}
+              className="w-full rounded-button bg-brand-primary py-2 text-xs font-bold text-white"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

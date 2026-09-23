@@ -81,6 +81,25 @@ export async function getShiftsData() {
   return { shifts: [] };
 }
 
+export async function getStaffOptionsForRosterAction() {
+  const session = await requirePermission("can_manage_shifts");
+  if (!session) return [];
+
+  try {
+    const supabase = await getSupabase();
+    const { data, error } = await supabase
+      .from("staff")
+      .select("id, full_name, role, employment_status")
+      .eq("employment_status", "active")
+      .order("full_name", { ascending: true });
+
+    if (!error && data) return data;
+  } catch (err) {
+    console.error("Error loading staff options for roster:", err);
+  }
+  return [];
+}
+
 export async function createShiftAction(data: {
   staffId: string;
   staffName: string;
@@ -94,32 +113,63 @@ export async function createShiftAction(data: {
   const session = await requirePermission("can_manage_shifts");
   if (!session) return UNAUTHORIZED;
 
+  if (!data.staffId || data.staffId.startsWith("stf-")) {
+    return { success: false as const, message: "Select a real staff member from the roster.", shifts: [] as MockShiftItem[] };
+  }
+
   const code = Math.floor(100000 + Math.random() * 900000).toString();
-  const startIso = new Date(`${data.shiftDate} ${data.scheduledStart}`).toISOString();
-  const endIso = new Date(`${data.shiftDate} ${data.scheduledEnd}`).toISOString();
+
+  const parseLocal = (date: string, time: string) => {
+    const match = time.trim().match(/^(\d{1,2}):(\d{2})\s*(AM|PM)?$/i);
+    if (!match) {
+      // Fallback: treat as HH:MM 24h
+      return new Date(`${date}T${time}:00`);
+    }
+    let hours = parseInt(match[1], 10);
+    const minutes = parseInt(match[2], 10);
+    const meridiem = match[3]?.toUpperCase();
+    if (meridiem === "PM" && hours < 12) hours += 12;
+    if (meridiem === "AM" && hours === 12) hours = 0;
+    const hh = String(hours).padStart(2, "0");
+    const mm = String(minutes).padStart(2, "0");
+    return new Date(`${date}T${hh}:${mm}:00`);
+  };
+
+  const startDate = parseLocal(data.shiftDate, data.scheduledStart);
+  const endDate = parseLocal(data.shiftDate, data.scheduledEnd);
+  if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime())) {
+    return { success: false as const, message: "Invalid shift date/time.", shifts: [] as MockShiftItem[] };
+  }
 
   try {
     const supabase = await getSupabase();
-    await supabase.from("shifts").insert([
+    const { error } = await supabase.from("shifts").insert([
       {
         restaurant_id: DEFAULT_RESTAURANT_ID,
         staff_id: data.staffId,
         shift_date: data.shiftDate,
-        scheduled_start: startIso,
-        scheduled_end: endIso,
+        scheduled_start: startDate.toISOString(),
+        scheduled_end: endDate.toISOString(),
         clock_in_code: code,
         status: "scheduled",
         assigned_tables: data.assignedTables,
         notes: data.notes || null,
+        created_by: session.id,
       },
     ]);
+    if (error) {
+      console.error("Failed to create shift in Supabase:", error.message);
+      return { success: false as const, message: error.message, shifts: [] as MockShiftItem[] };
+    }
   } catch (err) {
     console.error("Failed to create shift in Supabase:", err);
+    return { success: false as const, message: "Shift create failed.", shifts: [] as MockShiftItem[] };
   }
 
   revalidatePath("/admin/shifts");
+  revalidatePath("/admin/staff");
   const result = await getShiftsData();
-  return { success: true, shifts: result.shifts };
+  return { success: true as const, shifts: result.shifts, message: `Shift created. Clock-in code: ${code}` };
 }
 
 export async function updateShiftStatusAction(

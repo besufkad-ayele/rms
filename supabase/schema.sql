@@ -216,8 +216,20 @@ CREATE TABLE IF NOT EXISTS menu_items (
     photo_url TEXT,
     is_available BOOLEAN DEFAULT true,
     preparation_time_minutes INT DEFAULT 15,
+    vote_count INT NOT NULL DEFAULT 0,
     created_at TIMESTAMPTZ DEFAULT now()
 );
+
+-- 3.7b Ingredient cost history (retain latest 12 via trigger)
+CREATE TABLE IF NOT EXISTS ingredient_cost_history (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    ingredient_id UUID NOT NULL REFERENCES ingredients(id) ON DELETE CASCADE,
+    cost_per_unit NUMERIC(10,4) NOT NULL,
+    note TEXT,
+    recorded_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS ingredient_cost_history_ingredient_idx
+  ON ingredient_cost_history (ingredient_id, recorded_at DESC);
 
 -- 3.8 Recipes (Bill of Materials)
 CREATE TABLE IF NOT EXISTS recipes (
@@ -378,6 +390,23 @@ CREATE TRIGGER trg_deduct_recipe_inventory
 AFTER INSERT ON order_items
 FOR EACH ROW
 EXECUTE FUNCTION fn_deduct_recipe_inventory();
+
+-- 4.1b Menu popularity votes (units sold)
+CREATE OR REPLACE FUNCTION fn_increment_menu_votes()
+RETURNS TRIGGER AS $$
+BEGIN
+  UPDATE menu_items
+  SET vote_count = COALESCE(vote_count, 0) + NEW.quantity
+  WHERE id = NEW.menu_item_id;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_increment_menu_votes ON order_items;
+CREATE TRIGGER trg_increment_menu_votes
+AFTER INSERT ON order_items
+FOR EACH ROW
+EXECUTE FUNCTION fn_increment_menu_votes();
 
 -- 4.2 Reverse Inventory Deduction on Order/Item Cancellation or Dispute
 CREATE OR REPLACE FUNCTION fn_reverse_recipe_inventory()

@@ -103,6 +103,32 @@ h1, h2, h3, h4, h5, h6 {
   animation: pulseSubtle 2.5s infinite ease-in-out;
 }
 
+/* Admin mobile helpers */
+.admin-scroll-x {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain;
+}
+
+.admin-scroll-x > table {
+  min-width: 640px;
+}
+
+@media (max-width: 639px) {
+  .admin-hide-mobile {
+    display: none !important;
+  }
+  .admin-show-mobile {
+    display: block !important;
+  }
+}
+
+@media (min-width: 640px) {
+  .admin-show-mobile {
+    display: none !important;
+  }
+}
+
 @media print {
   body * {
     visibility: hidden;

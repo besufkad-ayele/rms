@@ -38,7 +38,7 @@ export default function QRCodesPage() {
   };
 
   return (
-    <div className="space-y-8 pb-16">
+    <div className="space-y-6 pb-10 sm:space-y-8 sm:pb-16">
       {/* Printable Header Controls */}
       <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between border-b border-divider pb-6 print:hidden">
         <div>
@@ -48,8 +48,8 @@ export default function QRCodesPage() {
               Scannable QR Tent Cards
             </span>
           </div>
-          <h1 className="font-header text-2xl font-bold text-brand-heading tracking-tight">
-            Printable QR Tent Cards Generator ({tables.length} Tables)
+          <h1 className="font-header text-xl font-bold tracking-tight text-brand-heading sm:text-2xl">
+            Printable QR Tent Cards ({tables.length} Tables)
           </h1>
           <p className="font-sans text-xs text-brand-secondary mt-0.5">
             Generate, preview, and print high-resolution scannable QR tent cards for physical table placement.

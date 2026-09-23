@@ -1,6 +1,8 @@
 "use client";
 
-import React, { useState, useEffect, useTransition } from "react";
+import React, { useState, useEffect, useTransition, Suspense } from "react";
+import { useSearchParams } from "next/navigation";
+import Link from "next/link";
 import {
   DollarSign,
   TrendingUp,
@@ -24,6 +26,9 @@ import {
   Check,
   Inbox,
   SparklesIcon,
+  Users,
+  Tag,
+  ArrowRight,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
@@ -38,6 +43,7 @@ import {
   MenuEngineeringItem,
   StaffPermissionRecord,
 } from "./actions";
+import { KitchenAdvisorPanel } from "@/components/admin/KitchenAdvisorPanel";
 import {
   DashboardKPIs,
   TableFloorState,
@@ -48,14 +54,32 @@ import {
 } from "@/data/mockDashboard";
 
 export default function AdminDashboardPage() {
-  const [isPending, startTransition] = useTransition();
+  return (
+    <Suspense fallback={<div className="py-16 text-center text-sm text-brand-secondary">Loading live dashboard…</div>}>
+      <AdminDashboardInner />
+    </Suspense>
+  );
+}
+
+function AdminDashboardInner() {
+  const searchParams = useSearchParams();
+  const rawTab = searchParams.get("tab");
+  const view =
+    rawTab === "menu_engineering" ||
+    rawTab === "permissions" ||
+    rawTab === "hr_summary" ||
+    rawTab === "operations" ||
+    rawTab === "overview"
+      ? rawTab
+      : "overview";
 
   // Active User & Main State
   const [sessionUser, setSessionUser] = useState<{ role: string; fullName: string; email?: string }>({
     role: "admin",
     fullName: "Abebe Kebede (Owner)",
   });
-  const [activeTab, setActiveTab] = useState<"operations" | "menu_engineering" | "permissions">("operations");
+
+  const [isPending, startTransition] = useTransition();
 
   const [kpis, setKpis] = useState<DashboardKPIs | null>(null);
   const [tables, setTables] = useState<TableFloorState[]>([]);
@@ -182,6 +206,29 @@ export default function AdminDashboardPage() {
 
   const isOwner = sessionUser.role === "admin";
 
+  const viewMeta: Record<string, { title: string; subtitle: string }> = {
+    overview: {
+      title: "Command Overview",
+      subtitle: "Cross-module pulse — operations, pricing pressure, and HR at a glance.",
+    },
+    operations: {
+      title: "Operations Pulse",
+      subtitle: "Live floor occupancy, KDS stream, settlements, and stock alerts.",
+    },
+    menu_engineering: {
+      title: "Dynamic Pricing & Menu Engineering",
+      subtitle: "Recipe cost signals, recommended price moves, and menu classification.",
+    },
+    hr_summary: {
+      title: "HR Snapshot",
+      subtitle: "Headcount, permissions coverage, and shortcuts into the HR module.",
+    },
+    permissions: {
+      title: "Module Permissions",
+      subtitle: "Grant or revoke operational rights for managers and staff.",
+    },
+  };
+
   if (!kpis) {
     return (
       <div className="flex min-h-[400px] items-center justify-center">
@@ -195,89 +242,46 @@ export default function AdminDashboardPage() {
     );
   }
 
+  const pendingPrices = priceRecommendations.filter((p) => p.status === "pending").length;
+  const managersCount = staffPermissions.filter((s) => s.role === "manager" || s.role === "admin").length;
+
   return (
-    <div className="space-y-8 pb-16">
+    <div className="space-y-6 pb-10 sm:space-y-8 sm:pb-16">
       {/* Toast Alert */}
       {toastMessage && (
-        <div className="fixed bottom-6 right-6 z-50 flex items-center gap-3 rounded-card bg-brand-primary px-4 py-3 text-white shadow-elevated transition-all animate-in fade-in slide-in-from-bottom-4">
+        <div className="fixed bottom-4 left-4 right-4 z-50 flex items-center gap-3 rounded-card bg-brand-primary px-4 py-3 text-white shadow-elevated sm:bottom-6 sm:left-auto sm:right-6 sm:max-w-sm">
           <CheckCircle2 className="h-4 w-4 text-status-free shrink-0" />
           <p className="text-xs font-medium">{toastMessage.text}</p>
         </div>
       )}
 
-      {/* Top Banner / User Badge & Navigation Tabs */}
-      <div className="flex flex-col gap-4 border-b border-divider pb-6 md:flex-row md:items-center md:justify-between">
-        <div>
-          <div className="flex items-center gap-2 mb-1">
+      {/* Header — title follows sidebar selection */}
+      <div className="flex flex-col gap-3 border-b border-divider pb-4 sm:gap-4 sm:pb-6 md:flex-row md:items-center md:justify-between">
+        <div className="min-w-0">
+          <div className="mb-1 flex flex-wrap items-center gap-2">
             <span
               className={cn(
-                "inline-flex items-center gap-1.5 rounded-pill px-3 py-0.5 text-xs font-bold",
+                "inline-flex items-center gap-1.5 rounded-pill px-3 py-0.5 text-[10px] font-bold sm:text-xs",
                 isOwner ? "bg-brand-accent text-white" : "bg-brand-primary text-white"
               )}
             >
               {isOwner ? <Crown className="h-3.5 w-3.5" /> : <ChefHat className="h-3.5 w-3.5" />}
-              {isOwner ? "Owner Super-Admin View" : "Operations Manager View"}
+              {isOwner ? "Owner View" : "Manager View"}
             </span>
-            <span className="text-xs text-brand-secondary font-medium">
-              Signed in as: <strong className="text-brand-heading">{sessionUser.fullName}</strong>
+            <span className="text-[11px] font-medium text-brand-secondary sm:text-xs">
+              <strong className="text-brand-heading">{sessionUser.fullName}</strong>
             </span>
           </div>
 
-          <h1 className="font-header text-2xl font-bold text-brand-heading tracking-tight">
-            Executive Operations &amp; Intelligence Hub
+          <h1 className="font-header text-xl font-bold tracking-tight text-brand-heading sm:text-2xl">
+            {viewMeta[view].title}
           </h1>
-          <p className="font-sans text-xs text-brand-secondary mt-0.5">
-            Real-time Supabase floor occupancy, KDS kitchen tickets stream, recipe COGS deduction, dynamic pricing &amp; menu engineering.
+          <p className="mt-0.5 font-sans text-[11px] text-brand-secondary sm:text-xs">
+            {viewMeta[view].subtitle}
           </p>
         </div>
 
-        {/* Action Controls & Navigation Tabs */}
         <div className="flex flex-wrap items-center gap-2.5">
-          <div className="flex items-center gap-1 rounded-pill bg-bg-card p-1 border border-divider shadow-xs text-xs font-semibold">
-            <button
-              onClick={() => setActiveTab("operations")}
-              className={cn(
-                "flex items-center gap-1.5 rounded-pill px-3.5 py-1.5 transition",
-                activeTab === "operations"
-                  ? "bg-brand-primary text-white"
-                  : "text-brand-secondary hover:text-brand-primary"
-              )}
-            >
-              <BarChart3 className="h-3.5 w-3.5" />
-              <span>Live Operations</span>
-            </button>
-
-            {isOwner && (
-              <button
-                onClick={() => setActiveTab("menu_engineering")}
-                className={cn(
-                  "flex items-center gap-1.5 rounded-pill px-3.5 py-1.5 transition",
-                  activeTab === "menu_engineering"
-                    ? "bg-brand-accent text-white font-bold"
-                    : "text-brand-secondary hover:text-brand-primary"
-                )}
-              >
-                <Sparkles className="h-3.5 w-3.5" />
-                <span>Dynamic Pricing &amp; Menu</span>
-              </button>
-            )}
-
-            {isOwner && (
-              <button
-                onClick={() => setActiveTab("permissions")}
-                className={cn(
-                  "flex items-center gap-1.5 rounded-pill px-3.5 py-1.5 transition",
-                  activeTab === "permissions"
-                    ? "bg-brand-primary text-white"
-                    : "text-brand-secondary hover:text-brand-primary"
-                )}
-              >
-                <Sliders className="h-3.5 w-3.5" />
-                <span>Staff Roles &amp; Permissions</span>
-              </button>
-            )}
-          </div>
-
           <button
             onClick={loadData}
             title="Refresh Data"
@@ -289,10 +293,147 @@ export default function AdminDashboardPage() {
         </div>
       </div>
 
+      {/* COMMAND OVERVIEW — summarizes ops + pricing + HR */}
+      {view === "overview" && (
+        <div className="space-y-6 animate-in fade-in duration-200">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="rounded-card border border-divider bg-white p-5 shadow-card">
+              <p className="text-[11px] font-bold uppercase tracking-wider text-brand-secondary">Gross Sales</p>
+              <p className="font-header mt-2 text-2xl font-bold text-brand-heading">
+                ETB {kpis.todayRevenue.toLocaleString()}
+              </p>
+              <p className="mt-1 text-[11px] font-semibold text-status-free">+{kpis.revenueGrowthPercent}% vs yesterday</p>
+            </div>
+            <div className="rounded-card border border-divider bg-white p-5 shadow-card">
+              <p className="text-[11px] font-bold uppercase tracking-wider text-brand-secondary">Floor Occupancy</p>
+              <p className="font-header mt-2 text-2xl font-bold text-brand-heading">
+                {kpis.occupiedTables} / {kpis.totalTables}
+              </p>
+              <p className="mt-1 text-[11px] text-brand-secondary">
+                {kpis.totalTables > 0
+                  ? Math.round((kpis.occupiedTables / kpis.totalTables) * 100)
+                  : 0}
+                % of tables busy
+              </p>
+            </div>
+            <div className="rounded-card border border-divider bg-white p-5 shadow-card">
+              <p className="text-[11px] font-bold uppercase tracking-wider text-brand-secondary">Pricing Actions</p>
+              <p className="font-header mt-2 text-2xl font-bold text-brand-heading">{pendingPrices}</p>
+              <p className="mt-1 text-[11px] text-brand-secondary">Pending price recommendations</p>
+            </div>
+            <div className="rounded-card border border-divider bg-white p-5 shadow-card">
+              <p className="text-[11px] font-bold uppercase tracking-wider text-brand-secondary">Workforce</p>
+              <p className="font-header mt-2 text-2xl font-bold text-brand-heading">{staffPermissions.length}</p>
+              <p className="mt-1 text-[11px] text-brand-secondary">{managersCount} managers / admins</p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+            <Link
+              href="/admin/dashboard?tab=operations"
+              className="group rounded-card border border-divider bg-white p-5 shadow-card transition hover:-translate-y-0.5 hover:shadow-elevated"
+            >
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand-accent/10 text-brand-accent">
+                  <BarChart3 className="h-5 w-5" />
+                </div>
+                <div>
+                  <h3 className="font-header text-base font-bold text-brand-heading">Operations Pulse</h3>
+                  <p className="text-xs text-brand-secondary">Floor, KDS, settlements, stock</p>
+                </div>
+              </div>
+              <div className="mt-4 flex items-center justify-between text-xs">
+                <span className="font-semibold text-brand-secondary">{alerts.length} stock alerts</span>
+                <ArrowRight className="h-4 w-4 text-brand-accent transition group-hover:translate-x-1" />
+              </div>
+            </Link>
+
+            <Link
+              href="/admin/dashboard?tab=menu_engineering"
+              className="group rounded-card border border-divider bg-white p-5 shadow-card transition hover:-translate-y-0.5 hover:shadow-elevated"
+            >
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-status-occupied-bg text-status-occupied">
+                  <Tag className="h-5 w-5" />
+                </div>
+                <div>
+                  <h3 className="font-header text-base font-bold text-brand-heading">Dynamic Pricing</h3>
+                  <p className="text-xs text-brand-secondary">Menu engineering &amp; price moves</p>
+                </div>
+              </div>
+              <div className="mt-4 flex items-center justify-between text-xs">
+                <span className="font-semibold text-brand-secondary">{menuEngineering.length} menu items scored</span>
+                <ArrowRight className="h-4 w-4 text-brand-accent transition group-hover:translate-x-1" />
+              </div>
+            </Link>
+
+            <Link
+              href="/admin/dashboard?tab=hr_summary"
+              className="group rounded-card border border-divider bg-white p-5 shadow-card transition hover:-translate-y-0.5 hover:shadow-elevated"
+            >
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-status-prep-bg text-status-prep">
+                  <Users className="h-5 w-5" />
+                </div>
+                <div>
+                  <h3 className="font-header text-base font-bold text-brand-heading">HR Snapshot</h3>
+                  <p className="text-xs text-brand-secondary">Headcount &amp; access summary</p>
+                </div>
+              </div>
+              <div className="mt-4 flex items-center justify-between text-xs">
+                <span className="font-semibold text-brand-secondary">Open full HR module →</span>
+                <ArrowRight className="h-4 w-4 text-brand-accent transition group-hover:translate-x-1" />
+              </div>
+            </Link>
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+            <div className="rounded-card border border-divider bg-white p-5 shadow-card">
+              <h3 className="font-header text-sm font-bold text-brand-heading flex items-center gap-2">
+                <Sparkles className="h-4 w-4 text-brand-accent" />
+                Pricing pressure (top)
+              </h3>
+              <div className="mt-3 space-y-2">
+                {priceRecommendations.slice(0, 3).map((rec) => (
+                  <div key={rec.id} className="flex items-center justify-between rounded-button border border-divider bg-bg-subtle px-3 py-2 text-xs">
+                    <span className="font-bold text-brand-primary">{rec.menuItemName}</span>
+                    <span className="font-mono text-brand-accent">
+                      ETB {rec.currentPrice} → {rec.recommendedPrice}
+                    </span>
+                  </div>
+                ))}
+                {priceRecommendations.length === 0 && (
+                  <p className="text-xs text-brand-secondary">No price recommendations right now.</p>
+                )}
+              </div>
+            </div>
+            <div className="rounded-card border border-divider bg-white p-5 shadow-card">
+              <h3 className="font-header text-sm font-bold text-brand-heading flex items-center gap-2">
+                <AlertTriangle className="h-4 w-4 text-status-occupied" />
+                Critical stock
+              </h3>
+              <div className="mt-3 space-y-2">
+                {alerts.slice(0, 3).map((a) => (
+                  <div key={a.id} className="flex items-center justify-between rounded-button border border-divider bg-bg-subtle px-3 py-2 text-xs">
+                    <span className="font-bold text-brand-primary">{a.name}</span>
+                    <span className="text-status-danger font-semibold">
+                      {a.stockQty} {a.unit}
+                    </span>
+                  </div>
+                ))}
+                {alerts.length === 0 && (
+                  <p className="text-xs text-brand-secondary">Stock levels look healthy.</p>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ========================================================================= */}
-      {/* TAB 1: EXECUTIVE LIVE OPERATIONS VIEW */}
+      {/* OPERATIONS PULSE */}
       {/* ========================================================================= */}
-      {activeTab === "operations" && (
+      {view === "operations" && (
         <div className="space-y-8">
           {/* Executive Top KPI Stats Grid */}
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -693,7 +834,7 @@ export default function AdminDashboardPage() {
       {/* ========================================================================= */}
       {/* TAB 2: DYNAMIC PRICING & MENU ENGINEERING MATRIX (OWNER ONLY) */}
       {/* ========================================================================= */}
-      {activeTab === "menu_engineering" && isOwner && (
+      {view === "menu_engineering" && (
         <div className="space-y-8 animate-in fade-in duration-200">
           {/* Section A: Dynamic Recipe Price Recommendation Engine */}
           <div className="rounded-card bg-white p-6 border border-divider shadow-card space-y-5">
@@ -807,6 +948,12 @@ export default function AdminDashboardPage() {
                           <span>{item.name}</span>
                           <span>ETB {item.price}</span>
                         </div>
+                        <p className="text-[10px] text-brand-secondary">
+                          {item.salesVolume} sold · {item.revenueSharePercent}% sales
+                          {item.salesGrowthPercent != null
+                            ? ` · growth ${item.salesGrowthPercent > 0 ? "+" : ""}${item.salesGrowthPercent}%`
+                            : ""}
+                        </p>
                         <p className="text-[10px] text-status-free font-semibold">{item.recommendationAction}</p>
                       </div>
                     ))}
@@ -833,6 +980,12 @@ export default function AdminDashboardPage() {
                           <span>{item.name}</span>
                           <span>ETB {item.price}</span>
                         </div>
+                        <p className="text-[10px] text-brand-secondary">
+                          {item.salesVolume} sold · {item.revenueSharePercent}% sales
+                          {item.salesGrowthPercent != null
+                            ? ` · growth ${item.salesGrowthPercent > 0 ? "+" : ""}${item.salesGrowthPercent}%`
+                            : ""}
+                        </p>
                         <p className="text-[10px] text-status-occupied font-semibold">{item.recommendationAction}</p>
                       </div>
                     ))}
@@ -859,6 +1012,12 @@ export default function AdminDashboardPage() {
                           <span>{item.name}</span>
                           <span>ETB {item.price}</span>
                         </div>
+                        <p className="text-[10px] text-brand-secondary">
+                          {item.salesVolume} sold · {item.revenueSharePercent}% sales
+                          {item.salesGrowthPercent != null
+                            ? ` · growth ${item.salesGrowthPercent > 0 ? "+" : ""}${item.salesGrowthPercent}%`
+                            : ""}
+                        </p>
                         <p className="text-[10px] text-brand-accent font-semibold">{item.recommendationAction}</p>
                       </div>
                     ))}
@@ -885,6 +1044,12 @@ export default function AdminDashboardPage() {
                           <span>{item.name}</span>
                           <span>ETB {item.price}</span>
                         </div>
+                        <p className="text-[10px] text-brand-secondary">
+                          {item.salesVolume} sold · {item.revenueSharePercent}% sales
+                          {item.salesGrowthPercent != null
+                            ? ` · growth ${item.salesGrowthPercent > 0 ? "+" : ""}${item.salesGrowthPercent}%`
+                            : ""}
+                        </p>
                         <p className="text-[10px] text-status-danger font-semibold">{item.recommendationAction}</p>
                       </div>
                     ))}
@@ -892,44 +1057,90 @@ export default function AdminDashboardPage() {
               </div>
             </div>
 
-            {/* Action Cards: What to Add Next vs What to Stop Providing */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4 border-t border-divider">
-              <div className="rounded-card p-5 border border-status-free/40 bg-status-free-bg/10 space-y-3">
-                <div className="flex items-center gap-2 text-status-free">
-                  <ThumbsUp className="h-5 w-5" />
-                  <h3 className="font-header font-bold text-sm text-brand-heading">
-                    Owner Recommendation: What to Add Next
-                  </h3>
-                </div>
-                <ul className="space-y-2 text-xs text-brand-primary">
-                  <li className="flex items-start gap-2">
-                    <CheckCircle2 className="h-4 w-4 text-status-free shrink-0 mt-0.5" />
-                    <span><strong>Add Avocado &amp; Goat Cheese Sambusa Trio:</strong> High customer inquiry during fasting seasons with 72% projected gross margin.</span>
-                  </li>
-                  <li className="flex items-start gap-2">
-                    <CheckCircle2 className="h-4 w-4 text-status-free shrink-0 mt-0.5" />
-                    <span><strong>Add Aged Tej Cocktail Decanters:</strong> Terrace lounge guests frequently request artisanal honey wine infusions.</span>
-                  </li>
-                </ul>
-              </div>
+            <KitchenAdvisorPanel />
+          </div>
+        </div>
+      )}
 
-              <div className="rounded-card p-5 border border-status-danger/40 bg-status-danger-bg/10 space-y-3">
-                <div className="flex items-center gap-2 text-status-danger">
-                  <ShieldAlert className="h-5 w-5" />
-                  <h3 className="font-header font-bold text-sm text-brand-heading">
-                    Owner Recommendation: What to Stop Providing
-                  </h3>
-                </div>
-                <ul className="space-y-2 text-xs text-brand-primary">
-                  <li className="flex items-start gap-2">
-                    <XCircle className="h-4 w-4 text-status-danger shrink-0 mt-0.5" />
-                    <span><strong>Remove Slow Steamed Vegetable Side:</strong> Accounts for less than 1.2% of sales with frequent kitchen spoilage variance.</span>
-                  </li>
-                  <li className="flex items-start gap-2">
-                    <XCircle className="h-4 w-4 text-status-danger shrink-0 mt-0.5" />
-                    <span><strong>De-list Generic Carbonated Soda 300ml:</strong> Replace with higher-margin artisanal fresh house fruit juices.</span>
-                  </li>
-                </ul>
+      {/* HR SNAPSHOT inside Live Dashboard */}
+      {view === "hr_summary" && (
+        <div className="space-y-6 animate-in fade-in duration-200">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="rounded-card border border-divider bg-white p-5 shadow-card">
+              <p className="text-[11px] font-bold uppercase tracking-wider text-brand-secondary">Headcount</p>
+              <p className="font-header mt-2 text-2xl font-bold text-brand-heading">{staffPermissions.length}</p>
+              <p className="mt-1 text-[11px] text-brand-secondary">Active staff records</p>
+            </div>
+            <div className="rounded-card border border-divider bg-white p-5 shadow-card">
+              <p className="text-[11px] font-bold uppercase tracking-wider text-brand-secondary">Managers</p>
+              <p className="font-header mt-2 text-2xl font-bold text-brand-heading">{managersCount}</p>
+              <p className="mt-1 text-[11px] text-brand-secondary">Admin &amp; manager roles</p>
+            </div>
+            <div className="rounded-card border border-divider bg-white p-5 shadow-card">
+              <p className="text-[11px] font-bold uppercase tracking-wider text-brand-secondary">On-duty signal</p>
+              <p className="font-header mt-2 text-2xl font-bold text-brand-heading">{kpis.onDutyStaffCount}</p>
+              <p className="mt-1 text-[11px] text-brand-secondary">From live roster pulse</p>
+            </div>
+            <div className="rounded-card border border-divider bg-white p-5 shadow-card">
+              <p className="text-[11px] font-bold uppercase tracking-wider text-brand-secondary">Avg rating</p>
+              <p className="font-header mt-2 text-2xl font-bold text-brand-heading">{kpis.avgStaffRating}</p>
+              <p className="mt-1 text-[11px] text-brand-secondary">Guest feedback score</p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+            <div className="rounded-card border border-divider bg-white p-5 shadow-card space-y-3">
+              <h3 className="font-header text-sm font-bold text-brand-heading flex items-center gap-2">
+                <UserCheck className="h-4 w-4 text-brand-accent" />
+                Permission coverage
+              </h3>
+              {staffPermissions.slice(0, 6).map((s) => {
+                const granted = [
+                  s.permissions.can_manage_staff && "HR",
+                  s.permissions.can_manage_shifts && "Shifts",
+                  s.permissions.can_manage_inventory && "Supply",
+                  s.permissions.can_view_finance && "Finance",
+                ].filter(Boolean);
+                return (
+                  <div
+                    key={s.id}
+                    className="flex items-center justify-between rounded-button border border-divider bg-bg-subtle px-3 py-2 text-xs"
+                  >
+                    <div>
+                      <p className="font-bold text-brand-primary">{s.fullName}</p>
+                      <p className="capitalize text-brand-secondary">{s.role}</p>
+                    </div>
+                    <span className="text-[10px] font-semibold text-brand-secondary">
+                      {granted.length ? granted.join(" · ") : "Floor only"}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="rounded-card border border-divider bg-white p-5 shadow-card space-y-3">
+              <h3 className="font-header text-sm font-bold text-brand-heading">Open HR module</h3>
+              <p className="text-xs text-brand-secondary">
+                Full personnel CRUD, clock-in approval, leave, roster, training, and audit live in Human Resource &amp; Management.
+              </p>
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                {[
+                  { href: "/admin/staff?tab=overview", label: "HR Dashboard" },
+                  { href: "/admin/staff?tab=profiles", label: "Personnel Profiles" },
+                  { href: "/admin/staff?tab=attendance", label: "Attendance & Clocking" },
+                  { href: "/admin/shifts", label: "Roster & Shifts" },
+                  { href: "/admin/staff?tab=leave", label: "Leave Management" },
+                  { href: "/admin/dashboard?tab=permissions", label: "Module Permissions" },
+                ].map((item) => (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    className="inline-flex items-center justify-between rounded-button border border-divider bg-bg-subtle px-3 py-2.5 text-xs font-bold text-brand-primary transition hover:bg-bg-active"
+                  >
+                    {item.label}
+                    <ArrowRight className="h-3.5 w-3.5 text-brand-accent" />
+                  </Link>
+                ))}
               </div>
             </div>
           </div>
@@ -937,9 +1148,9 @@ export default function AdminDashboardPage() {
       )}
 
       {/* ========================================================================= */}
-      {/* TAB 3: STAFF ROLES & GRANULAR PERMISSION MANAGEMENT (OWNER ONLY) */}
+      {/* MODULE PERMISSIONS */}
       {/* ========================================================================= */}
-      {activeTab === "permissions" && isOwner && (
+      {view === "permissions" && (
         <div className="rounded-card bg-white p-6 border border-divider shadow-card space-y-6 animate-in fade-in duration-200">
           <div>
             <div className="flex items-center gap-2">
@@ -953,7 +1164,7 @@ export default function AdminDashboardPage() {
             </p>
           </div>
 
-          <div className="overflow-x-auto">
+          <div className="admin-scroll-x">
             <table className="w-full text-left text-xs border-collapse">
               <thead>
                 <tr className="border-b border-divider text-brand-secondary font-semibold uppercase tracking-wider text-[10px]">

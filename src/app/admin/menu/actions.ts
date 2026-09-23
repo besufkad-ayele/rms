@@ -26,6 +26,7 @@ export interface DBMenuItem {
   image_url?: string;
   is_available: boolean;
   is_spicy?: boolean;
+  vote_count?: number;
   created_at?: string;
 }
 

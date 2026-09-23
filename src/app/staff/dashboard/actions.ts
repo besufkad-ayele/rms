@@ -253,7 +253,8 @@ export async function settleTableBillAction(
   orderId?: string,
   method: "cash" | "cbe_birr" | "telebirr" = "cash",
   _amount: number = 0,
-  transactionReference?: string
+  transactionReference?: string,
+  tipAmount: number = 0
 ) {
   const session = await requireFloorStaff();
   if (!session) return UNAUTHORIZED;
@@ -261,6 +262,7 @@ export async function settleTableBillAction(
   try {
     const supabase = await getSupabase();
     const dbMethod = method === "cash" ? "cash" : method === "cbe_birr" ? "cbe_transfer" : "telegram";
+    const tip = Math.max(0, Number(tipAmount) || 0);
 
     if (orderId) {
       const { data: order } = await supabase
@@ -278,6 +280,12 @@ export async function settleTableBillAction(
         .eq("status", "pending")
         .maybeSingle();
 
+      const billTotal = computeBill(Number(order.total_amount)).total;
+      // Prefer explicit tip from staff; else keep guest-entered pending tip
+      const finalTip =
+        tip > 0 ? tip : Math.max(0, Number(pending?.tip_amount || 0));
+      const payAmount = billTotal + finalTip;
+
       let paymentId = pending?.id;
       if (paymentId) {
         await supabase
@@ -287,19 +295,21 @@ export async function settleTableBillAction(
             confirmed_by: session.id,
             confirmed_at: new Date().toISOString(),
             method: dbMethod,
+            amount: payAmount,
+            tip_amount: finalTip,
             transaction_reference:
               transactionReference?.trim() || pending?.transaction_reference || null,
           })
           .eq("id", paymentId);
       } else {
-        const billTotal = computeBill(Number(order.total_amount)).total;
         const { data: inserted } = await supabase
           .from("payments")
           .insert([
             {
               order_id: orderId,
               method: dbMethod,
-              amount: billTotal,
+              amount: payAmount,
+              tip_amount: finalTip,
               status: "confirmed",
               confirmed_by: session.id,
               confirmed_at: new Date().toISOString(),
@@ -335,7 +345,7 @@ export async function settleTableBillAction(
         staffId: session.id,
         orderId: orderId || null,
         eventType: "table_cleared",
-        notes: `Settled via ${method}`,
+        notes: `Settled via ${method}${tip > 0 ? ` · tip ${tip} ETB` : ""}`,
       });
     }
 

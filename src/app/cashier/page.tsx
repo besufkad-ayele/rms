@@ -34,6 +34,7 @@ export default function CashierPortalPage() {
     "cash"
   );
   const [settleTxRef, setSettleTxRef] = useState("");
+  const [settleTip, setSettleTip] = useState(0);
   const [printedReceipt, setPrintedReceipt] = useState<ReceiptData | null>(null);
 
   const [checkOrderTable, setCheckOrderTable] = useState<StaffStationTable | null>(null);
@@ -92,15 +93,19 @@ export default function CashierPortalPage() {
       settleTable.activeOrderId,
       dbMethod as "cash" | "cbe_birr" | "telebirr",
       settleTable.billTotal || 0,
-      settleTxRef.trim() || undefined
+      settleTxRef.trim() || undefined,
+      settleTip
     );
     if (!res.success) {
       showToast(res.message || "Could not settle this table.");
       return;
     }
-    showToast(`Table ${settleTable.code} settled and cleared.`);
+    showToast(
+      `Table ${settleTable.code} settled${settleTip > 0 ? ` · tip ETB ${settleTip}` : ""}.`
+    );
     setSettleTable(null);
     setSettleTxRef("");
+    setSettleTip(0);
     if (res.receipt) setPrintedReceipt(res.receipt);
     await loadTables();
   };
@@ -225,6 +230,7 @@ export default function CashierPortalPage() {
                     type="button"
                     onClick={() => {
                       setSettleTable(table);
+                      setSettleTip(0);
                       if (
                         table.pendingPayMethod === "cbe_birr" ||
                         table.pendingPayMethod === "telebirr"
@@ -467,8 +473,43 @@ export default function CashierPortalPage() {
             <div>
               <h3 className="font-header text-base font-bold">Settle Table {settleTable.code}</h3>
               <p className="text-xs text-brand-secondary">
-                Manual confirmation · ETB {(settleTable.billTotal || 0).toLocaleString()}
+                Manual confirmation · Bill ETB {(settleTable.billTotal || 0).toLocaleString()}
+                {settleTip > 0
+                  ? ` + tip ${settleTip.toLocaleString()} = ${(
+                      (settleTable.billTotal || 0) + settleTip
+                    ).toLocaleString()}`
+                  : ""}
               </p>
+            </div>
+            <div>
+              <label className="text-[10px] font-bold uppercase text-brand-secondary">
+                Tip received (ETB)
+              </label>
+              <div className="mt-1 flex flex-wrap gap-1.5">
+                {[0, 20, 50, 100, 200].map((preset) => (
+                  <button
+                    key={preset}
+                    type="button"
+                    onClick={() => setSettleTip(preset)}
+                    className={cn(
+                      "rounded-pill px-2.5 py-1 text-[11px] font-bold border",
+                      settleTip === preset
+                        ? "bg-brand-primary text-white border-brand-primary"
+                        : "bg-bg-subtle border-divider text-brand-primary"
+                    )}
+                  >
+                    {preset === 0 ? "None" : `+${preset}`}
+                  </button>
+                ))}
+              </div>
+              <input
+                type="number"
+                min={0}
+                value={settleTip}
+                onChange={(e) => setSettleTip(Math.max(0, parseFloat(e.target.value) || 0))}
+                className="mt-2 w-full rounded-button border border-divider bg-bg-subtle px-3 py-2 text-xs font-bold"
+                placeholder="Custom tip"
+              />
             </div>
             <div className="grid grid-cols-2 gap-2">
               {[

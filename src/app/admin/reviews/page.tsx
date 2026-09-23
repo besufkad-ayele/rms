@@ -119,7 +119,7 @@ export default function AdminReviewsPage() {
   const unresolvedFeedbacks = feedbacks.filter((f) => !f.resolved || f.weightedScore < 4.0);
 
   return (
-    <div className="space-y-8 pb-16">
+    <div className="space-y-6 pb-10 sm:space-y-8 sm:pb-16">
       {/* Toast Alert */}
       {toastMessage && (
         <div className="fixed bottom-6 right-6 z-50 flex items-center gap-3 rounded-card bg-brand-primary px-4 py-3 text-white shadow-elevated transition-all animate-in fade-in slide-in-from-bottom-4">
@@ -513,7 +513,7 @@ export default function AdminReviewsPage() {
               </p>
             </div>
 
-            <div className="overflow-x-auto">
+            <div className="admin-scroll-x">
               <table className="w-full text-left text-xs">
                 <thead>
                   <tr className="border-b border-divider text-brand-secondary uppercase font-semibold text-[10px] tracking-wider">

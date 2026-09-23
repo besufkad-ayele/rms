@@ -24,6 +24,7 @@ export interface MockIngredientItem {
   lowStockThreshold: number;
   costPerUnit: number;
   lastRestocked: string;
+  costHistory: { cost: number; recordedAt: string; note?: string | null }[];
 }
 
 export interface MockRecipeData {
@@ -66,6 +67,29 @@ export async function getInventoryData() {
 
     let ingredients: MockIngredientItem[] = [];
     if (dbIngredients && dbIngredients.length > 0) {
+      const ids = dbIngredients.map((i: { id: string }) => i.id);
+      const { data: historyRows } = await supabase
+        .from("ingredient_cost_history")
+        .select("ingredient_id, cost_per_unit, note, recorded_at")
+        .in("ingredient_id", ids)
+        .order("recorded_at", { ascending: false });
+
+      const historyByIng = new Map<
+        string,
+        { cost: number; recordedAt: string; note?: string | null }[]
+      >();
+      for (const row of historyRows || []) {
+        const list = historyByIng.get(row.ingredient_id) || [];
+        if (list.length < 12) {
+          list.push({
+            cost: Number(row.cost_per_unit),
+            recordedAt: row.recorded_at,
+            note: row.note,
+          });
+        }
+        historyByIng.set(row.ingredient_id, list);
+      }
+
       ingredients = dbIngredients.map((i: any) => ({
         id: i.id,
         name: i.name,
@@ -75,6 +99,13 @@ export async function getInventoryData() {
         lowStockThreshold: Number(i.low_stock_threshold || 10),
         costPerUnit: Number(i.cost_per_unit || 0),
         lastRestocked: i.last_restocked_at ? i.last_restocked_at.split("T")[0] : "Recently",
+        costHistory: historyByIng.get(i.id) || [
+          {
+            cost: Number(i.cost_per_unit || 0),
+            recordedAt: i.updated_at || new Date().toISOString(),
+            note: "Current",
+          },
+        ],
       }));
     }
 
@@ -173,26 +204,65 @@ export async function addIngredientAction(data: {
   return { success: true, ingredients: inv.ingredients };
 }
 
-export async function restockIngredientAction(ingredientId: string, addedQty: number) {
+export async function restockIngredientAction(
+  ingredientId: string,
+  addedQty: number,
+  newCostPerUnit?: number,
+) {
   const session = await requirePermission("can_manage_inventory");
   if (!session) return UNAUTHORIZED;
 
   try {
     const supabase = await getSupabase();
-    const { data: ing } = await supabase.from("ingredients").select("stock_qty").eq("id", ingredientId).single();
+    const { data: ing } = await supabase
+      .from("ingredients")
+      .select("stock_qty, cost_per_unit")
+      .eq("id", ingredientId)
+      .single();
 
     if (ing) {
       const cur = Number(ing.stock_qty || 0);
-      await supabase
-        .from("ingredients")
-        .update({
-          stock_qty: cur + addedQty,
-          last_restocked_at: new Date().toISOString(),
-        })
-        .eq("id", ingredientId);
+      const patch: Record<string, unknown> = {
+        stock_qty: cur + addedQty,
+        last_restocked_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+      if (
+        typeof newCostPerUnit === "number" &&
+        !Number.isNaN(newCostPerUnit) &&
+        newCostPerUnit >= 0
+      ) {
+        patch.cost_per_unit = newCostPerUnit;
+      }
+      await supabase.from("ingredients").update(patch).eq("id", ingredientId);
     }
   } catch (err) {
     console.error("Failed to restock ingredient in Supabase:", err);
+  }
+
+  revalidatePath("/admin/inventory");
+  const inv = await getInventoryData();
+  return { success: true, ingredients: inv.ingredients };
+}
+
+export async function updateIngredientCostAction(
+  ingredientId: string,
+  costPerUnit: number,
+) {
+  const session = await requirePermission("can_manage_inventory");
+  if (!session) return UNAUTHORIZED;
+
+  try {
+    const supabase = await getSupabase();
+    await supabase
+      .from("ingredients")
+      .update({
+        cost_per_unit: costPerUnit,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", ingredientId);
+  } catch (err) {
+    console.error("Failed to update ingredient cost:", err);
   }
 
   revalidatePath("/admin/inventory");

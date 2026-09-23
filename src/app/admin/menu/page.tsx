@@ -92,7 +92,7 @@ export default function AdminMenuPage() {
   };
 
   return (
-    <div className="space-y-8 pb-16">
+    <div className="space-y-6 pb-10 sm:space-y-8 sm:pb-16">
       {/* Toast Alert */}
       {toastMessage && (
         <div className="fixed bottom-6 right-6 z-50 flex items-center gap-3 rounded-card bg-brand-primary px-4 py-3 text-white shadow-elevated transition-all animate-in fade-in">
@@ -129,7 +129,7 @@ export default function AdminMenuPage() {
 
       {/* Filter Bar */}
       <div className="rounded-card bg-white p-4 border border-divider shadow-card flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 md:pb-0">
+        <div className="flex items-center gap-1.5 admin-scroll-x pb-1 md:pb-0">
           {["all", "mains", "starters", "desserts", "beverages"].map((cat) => (
             <button
               key={cat}
@@ -195,6 +195,9 @@ export default function AdminMenuPage() {
                 )}
                 <p className="text-xs text-brand-secondary line-clamp-2 mt-1">
                   {item.description || "Highland Ethiopian dish prepared with traditional spices."}
+                </p>
+                <p className="mt-1.5 text-[11px] font-bold text-brand-primary/70">
+                  {item.vote_count ?? 0} votes (units sold)
                 </p>
               </div>
             </div>

@@ -28,24 +28,36 @@ import {
   createShiftAction,
   updateShiftStatusAction,
   regenerateShiftCodeAction,
+  getStaffOptionsForRosterAction,
   MockShiftItem,
 } from "./actions";
+
+type RosterStaffOption = {
+  id: string;
+  full_name: string;
+  role: string;
+  employment_status: string;
+};
 
 export default function ShiftsRosterPage() {
   const [isPending, startTransition] = useTransition();
 
   const [shifts, setShifts] = useState<MockShiftItem[]>([]);
+  const [staffOptions, setStaffOptions] = useState<RosterStaffOption[]>([]);
   const [selectedRole, setSelectedRole] = useState<string>("all");
   const [selectedStatus, setSelectedStatus] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState<string>("");
 
   // Modal State
   const [showScheduleModal, setShowScheduleModal] = useState<boolean>(false);
-  const [newStaffName, setNewStaffName] = useState<string>("Sara Mengistu");
+  const [newStaffId, setNewStaffId] = useState<string>("");
+  const [newStaffName, setNewStaffName] = useState<string>("");
   const [newStaffRole, setNewStaffRole] = useState<string>("waiter");
-  const [newShiftDate, setNewShiftDate] = useState<string>("2026-08-15");
-  const [newStartTime, setNewStartTime] = useState<string>("11:00 AM");
-  const [newEndTime, setNewEndTime] = useState<string>("07:00 PM");
+  const [newShiftDate, setNewShiftDate] = useState<string>(() =>
+    new Date().toISOString().split("T")[0]
+  );
+  const [newStartTime, setNewStartTime] = useState<string>("11:00");
+  const [newEndTime, setNewEndTime] = useState<string>("19:00");
   const [newAssignedTables, setNewAssignedTables] = useState<string>("T-01, T-02, T-03");
   const [newNotes, setNewNotes] = useState<string>("");
 
@@ -58,8 +70,18 @@ export default function ShiftsRosterPage() {
   };
 
   const loadData = async () => {
-    const data = await getShiftsData();
+    const [data, staff] = await Promise.all([
+      getShiftsData(),
+      getStaffOptionsForRosterAction(),
+    ]);
     setShifts(data.shifts);
+    setStaffOptions(staff as RosterStaffOption[]);
+    if (!newStaffId && staff.length > 0) {
+      const first = staff[0] as RosterStaffOption;
+      setNewStaffId(first.id);
+      setNewStaffName(first.full_name);
+      setNewStaffRole(first.role);
+    }
   };
 
   useEffect(() => {
@@ -108,6 +130,10 @@ export default function ShiftsRosterPage() {
 
   const handleCreateShift = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!newStaffId) {
+      showToast("Select a staff member first.");
+      return;
+    }
     startTransition(async () => {
       const tablesArray = newAssignedTables
         .split(",")
@@ -115,7 +141,7 @@ export default function ShiftsRosterPage() {
         .filter(Boolean);
 
       const res = await createShiftAction({
-        staffId: `stf-${Date.now()}`,
+        staffId: newStaffId,
         staffName: newStaffName,
         staffRole: newStaffRole,
         shiftDate: newShiftDate,
@@ -127,14 +153,16 @@ export default function ShiftsRosterPage() {
 
       if (res.success) {
         setShowScheduleModal(false);
-        showToast(`Shift scheduled for ${newStaffName}!`);
+        showToast(res.message || `Shift scheduled for ${newStaffName}!`);
         loadData();
+      } else {
+        showToast(("message" in res && res.message) || "Could not create shift.");
       }
     });
   };
 
   return (
-    <div className="space-y-8 pb-16">
+    <div className="space-y-6 pb-10 sm:space-y-8 sm:pb-16">
       {/* Toast Alert */}
       {toastMessage && (
         <div className="fixed bottom-6 right-6 z-50 flex items-center gap-3 rounded-card bg-brand-primary px-4 py-3 text-white shadow-elevated transition-all animate-in fade-in slide-in-from-bottom-4">
@@ -309,7 +337,7 @@ export default function ShiftsRosterPage() {
         </div>
 
         {/* Shifts Table */}
-        <div className="overflow-x-auto">
+        <div className="admin-scroll-x">
           <table className="w-full text-left text-xs">
             <thead>
               <tr className="border-b border-divider text-brand-secondary uppercase font-semibold text-[10px] tracking-wider">
@@ -485,55 +513,62 @@ export default function ShiftsRosterPage() {
                   Staff Member:
                 </label>
                 <select
-                  value={newStaffName}
+                  value={newStaffId}
                   onChange={(e) => {
-                    setNewStaffName(e.target.value);
-                    if (e.target.value.includes("Lemma") || e.target.value.includes("Tesfaye")) {
-                      setNewStaffRole("cook");
-                    } else if (e.target.value.includes("Gebre")) {
-                      setNewStaffRole("cleaner");
-                    } else if (e.target.value.includes("Bekele")) {
-                      setNewStaffRole("host");
-                    } else {
-                      setNewStaffRole("waiter");
+                    const id = e.target.value;
+                    setNewStaffId(id);
+                    const match = staffOptions.find((s) => s.id === id);
+                    if (match) {
+                      setNewStaffName(match.full_name);
+                      setNewStaffRole(match.role);
                     }
                   }}
                   className="w-full rounded-button border border-divider bg-bg-subtle p-2 text-xs font-semibold text-brand-primary"
+                  required
                 >
-                  <option value="Sara Mengistu">Sara Mengistu (Waiter)</option>
-                  <option value="Michael Tadesse">Michael Tadesse (Waiter)</option>
-                  <option value="Eden Haile">Eden Haile (Waiter)</option>
-                  <option value="Dawit Bekele">Dawit Bekele (Host)</option>
-                  <option value="Kassahun Lemma">Kassahun Lemma (Cook)</option>
-                  <option value="Marta Tesfaye">Marta Tesfaye (Cook)</option>
-                  <option value="Yared Gebre">Yared Gebre (Cleaner)</option>
-                  <option value="Senait Alemu">Senait Alemu (Waiter)</option>
+                  {staffOptions.length === 0 && <option value="">No active staff found</option>}
+                  {staffOptions.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.full_name} ({s.role})
+                    </option>
+                  ))}
                 </select>
+              </div>
+
+              <div>
+                <label className="font-semibold text-brand-primary block mb-1">Shift Date:</label>
+                <input
+                  type="date"
+                  value={newShiftDate}
+                  onChange={(e) => setNewShiftDate(e.target.value)}
+                  className="w-full rounded-button border border-divider bg-bg-subtle p-2 text-xs text-brand-primary"
+                  required
+                />
               </div>
 
               <div className="grid grid-cols-2 gap-2">
                 <div>
                   <label className="font-semibold text-brand-primary block mb-1">
-                    Start Time:
+                    Start Time (24h):
                   </label>
                   <input
-                    type="text"
+                    type="time"
                     value={newStartTime}
                     onChange={(e) => setNewStartTime(e.target.value)}
-                    placeholder="e.g. 11:00 AM"
                     className="w-full rounded-button border border-divider bg-bg-subtle p-2 text-xs text-brand-primary"
+                    required
                   />
                 </div>
                 <div>
                   <label className="font-semibold text-brand-primary block mb-1">
-                    End Time:
+                    End Time (24h):
                   </label>
                   <input
-                    type="text"
+                    type="time"
                     value={newEndTime}
                     onChange={(e) => setNewEndTime(e.target.value)}
-                    placeholder="e.g. 07:00 PM"
                     className="w-full rounded-button border border-divider bg-bg-subtle p-2 text-xs text-brand-primary"
+                    required
                   />
                 </div>
               </div>

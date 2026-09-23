@@ -21,11 +21,11 @@ import {
   Plus,
   Flame,
   UserCheck,
-  Edit2,
   FileCheck,
+  Palmtree,
+  Send,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { updateStaffProfileAndPinAction } from "@/app/staff-login/actions";
 import { getCurrentSessionAction } from "@/app/rms-login/actions";
 import {
   getStaffLiveTablesAction,
@@ -35,6 +35,13 @@ import {
   getOrderTicketAction,
   OrderTicketDetail,
 } from "./actions";
+import {
+  requestClockInAction,
+  requestClockOutAction,
+  getMyClockStatusAction,
+  submitLeaveRequestAction,
+  getMyLeaveRequestsAction,
+} from "@/app/admin/staff/actions";
 import { PaymentMethodCard, PaymentMethod } from "@/components/order/PaymentMethodCard";
 import { PrintableReceipt } from "@/components/order/PrintableReceipt";
 import { ReceiptData } from "@/lib/receipts";
@@ -86,13 +93,33 @@ export default function StaffDashboardPage() {
   const staffName = sessionUser?.fullName || "Attendant";
   const staffId = sessionUser?.id || "";
 
-  const [isCheckedIn, setIsCheckedIn] = useState<boolean>(true);
+  const [clockState, setClockState] = useState<"idle" | "pending" | "clocked_in" | "clocked_out" | "rejected">("idle");
+  const [shiftCode, setShiftCode] = useState("");
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [myLeave, setMyLeave] = useState<any[]>([]);
+  const [showLeaveModal, setShowLeaveModal] = useState(false);
+  const [leaveType, setLeaveType] = useState("Annual Leave");
+  const [leaveStart, setLeaveStart] = useState("");
+  const [leaveEnd, setLeaveEnd] = useState("");
+  const [leaveReason, setLeaveReason] = useState("");
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
     setTimeout(() => setToastMessage(null), 3500);
   };
+
+  const refreshClockAndLeave = async () => {
+    const [clock, leaves] = await Promise.all([
+      getMyClockStatusAction(),
+      getMyLeaveRequestsAction(),
+    ]);
+    if (clock?.state) setClockState(clock.state);
+    setMyLeave(leaves || []);
+  };
+
+  useEffect(() => {
+    if (sessionUser?.id) refreshClockAndLeave();
+  }, [sessionUser?.id]);
 
   // Station Tables State
   const [myTables, setMyTables] = useState<StaffStationTable[]>([]);
@@ -152,14 +179,6 @@ export default function StaffDashboardPage() {
     setLoadingTicket(false);
   };
 
-  // Edit Profile & PIN Modal
-  const [showEditProfileModal, setShowEditProfileModal] = useState<boolean>(false);
-  const [currentPin, setCurrentPin] = useState<string>("");
-  const [newPin, setNewPin] = useState<string>("");
-  const [newPhone, setNewPhone] = useState<string>("+251933445566");
-  const [emergencyPhone, setEmergencyPhone] = useState<string>("+251933998877");
-  const [profileMsg, setProfileMsg] = useState<{ text: string; type: "success" | "error" } | null>(null);
-
   // Training checklist
   const [checklist, setChecklist] = useState([
     { id: 1, title: "Table Etiquette & Greeting Standards", completed: true },
@@ -177,27 +196,31 @@ export default function StaffDashboardPage() {
     showToast("Training progress updated!");
   };
 
-  const handleUpdateProfile = async (e: React.FormEvent) => {
+  const handleClockIn = async () => {
+    const res = await requestClockInAction(shiftCode || undefined);
+    showToast(res.message || (res.success ? "Submitted" : "Failed"));
+    await refreshClockAndLeave();
+  };
+
+  const handleClockOut = async () => {
+    const res = await requestClockOutAction();
+    showToast(res.message || (res.success ? "Clocked out" : "Failed"));
+    await refreshClockAndLeave();
+  };
+
+  const handleSubmitLeave = async (e: React.FormEvent) => {
     e.preventDefault();
-    setProfileMsg(null);
-    const res = await updateStaffProfileAndPinAction(
-      staffId,
-      currentPin,
-      newPin,
-      newPhone,
-      emergencyPhone
-    );
+    const res = await submitLeaveRequestAction({
+      leaveType,
+      startDate: leaveStart,
+      endDate: leaveEnd,
+      reason: leaveReason,
+    });
+    showToast(res.message || (res.success ? "Leave submitted" : "Failed"));
     if (res.success) {
-      setProfileMsg({ text: res.message, type: "success" });
-      setTimeout(() => {
-        setShowEditProfileModal(false);
-        setCurrentPin("");
-        setNewPin("");
-        setProfileMsg(null);
-      }, 1200);
-      showToast("Profile & PIN updated!");
-    } else {
-      setProfileMsg({ text: res.message, type: "error" });
+      setShowLeaveModal(false);
+      setLeaveReason("");
+      await refreshClockAndLeave();
     }
   };
 
@@ -207,7 +230,11 @@ export default function StaffDashboardPage() {
     return "cash";
   };
 
-  const handleWaiterSettle = async (method: PaymentMethod, payAccount?: string) => {
+  const handleWaiterSettle = async (
+    method: PaymentMethod,
+    payAccount?: string,
+    tipAmount?: number
+  ) => {
     if (!settleTable?.activeOrderId) return;
     setIsSettling(true);
     const res = await settleTableBillAction(
@@ -215,14 +242,17 @@ export default function StaffDashboardPage() {
       settleTable.activeOrderId,
       mapWaiterPaymentMethod(method),
       settleTable.billTotal || 0,
-      payAccount?.trim() || undefined
+      payAccount?.trim() || undefined,
+      tipAmount || 0
     );
     setIsSettling(false);
     if (!res.success) {
       showToast(res.message || "Could not settle this table.");
       return;
     }
-    showToast(`Table ${settleTable.code} settled.`);
+    showToast(
+      `Table ${settleTable.code} settled${tipAmount ? ` · tip ETB ${tipAmount}` : ""}.`
+    );
     setSettleTable(null);
     if (res.receipt) setPrintedReceipt(res.receipt);
     await loadTables();
@@ -298,11 +328,11 @@ export default function StaffDashboardPage() {
           </div>
 
           <button
-            onClick={() => setShowEditProfileModal(true)}
+            onClick={() => setShowLeaveModal(true)}
             className="flex items-center gap-1.5 rounded-button bg-bg-card px-3 py-2 text-xs font-semibold text-brand-primary border border-divider hover:bg-bg-subtle transition shadow-xs cursor-pointer"
           >
-            <Edit2 className="h-3.5 w-3.5 text-brand-accent" />
-            <span>Edit Profile &amp; PIN</span>
+            <Palmtree className="h-3.5 w-3.5 text-brand-accent" />
+            <span>Request Leave</span>
           </button>
         </div>
       </div>
@@ -310,32 +340,101 @@ export default function StaffDashboardPage() {
       {/* Quick Action Ribbon */}
       <div className="grid grid-cols-1 gap-4">
         {/* Clock-In Banner */}
-        <div className="rounded-card bg-brand-primary text-white p-4 shadow-card flex items-center justify-between">
+        <div className="rounded-card bg-brand-primary text-white p-4 shadow-card flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             <div className="h-10 w-10 rounded-xl bg-white/10 flex items-center justify-center text-status-free">
               <CheckCircle2 className="h-5 w-5" />
             </div>
             <div>
               <h3 className="font-header text-sm font-bold text-white">
-                Shift Verified (Code: #381940)
+                {clockState === "clocked_in"
+                  ? "On duty — admin approved"
+                  : clockState === "pending"
+                  ? "Clock-in waiting for admin approval"
+                  : clockState === "rejected"
+                  ? "Last clock-in was rejected"
+                  : clockState === "clocked_out"
+                  ? "Shift completed for today"
+                  : "Not clocked in"}
               </h3>
               <p className="text-xs text-white/80">
-                Clocked in at 11:28 AM • Punctuality: On-Time (+2m)
+                Tap &quot;I&apos;m on my job&quot; to request clock-in. Admin must approve before your shift is active.
               </p>
             </div>
           </div>
 
-          <button
-            onClick={() => {
-              setIsCheckedIn(!isCheckedIn);
-              showToast(isCheckedIn ? "Clocked out of shift" : "Clocked in to shift");
-            }}
-            className="rounded-button bg-status-free px-3.5 py-1.5 text-xs font-bold text-white hover:opacity-90 transition shrink-0"
-          >
-            {isCheckedIn ? "Clock Out" : "Clock In"}
-          </button>
+          <div className="flex flex-wrap items-center gap-2">
+            {(clockState === "idle" || clockState === "rejected" || clockState === "clocked_out") && (
+              <>
+                <input
+                  type="text"
+                  value={shiftCode}
+                  onChange={(e) => setShiftCode(e.target.value)}
+                  placeholder="Shift code (optional)"
+                  className="rounded-button border border-white/20 bg-white/10 px-3 py-1.5 text-xs text-white placeholder:text-white/50 w-36"
+                />
+                <button
+                  onClick={handleClockIn}
+                  className="rounded-button bg-status-free px-3.5 py-1.5 text-xs font-bold text-white hover:opacity-90 transition shrink-0"
+                >
+                  I&apos;m on my job
+                </button>
+              </>
+            )}
+            {clockState === "pending" && (
+              <span className="rounded-pill bg-status-occupied px-3 py-1.5 text-[11px] font-bold">
+                Pending approval
+              </span>
+            )}
+            {clockState === "clocked_in" && (
+              <button
+                onClick={handleClockOut}
+                className="rounded-button bg-white/15 px-3.5 py-1.5 text-xs font-bold text-white hover:bg-white/25 transition shrink-0"
+              >
+                Clock Out
+              </button>
+            )}
+          </div>
         </div>
       </div>
+
+      {/* Leave status strip */}
+      {myLeave.length > 0 && (
+        <div className="rounded-card border border-divider bg-white p-4 shadow-card">
+          <h3 className="font-header text-sm font-bold text-brand-heading flex items-center gap-2 mb-3">
+            <Palmtree className="h-4 w-4 text-brand-accent" />
+            My Leave Requests
+          </h3>
+          <div className="space-y-2">
+            {myLeave.slice(0, 5).map((lv) => (
+              <div
+                key={lv.id}
+                className="flex flex-wrap items-center justify-between gap-2 rounded-button border border-divider bg-bg-subtle px-3 py-2 text-xs"
+              >
+                <div>
+                  <p className="font-bold text-brand-primary">{lv.type}</p>
+                  <p className="text-brand-secondary">
+                    {lv.startDate} → {lv.endDate}
+                    {lv.reason ? ` · ${lv.reason}` : ""}
+                  </p>
+                </div>
+                <span
+                  className={cn(
+                    "rounded-pill px-2 py-0.5 text-[10px] font-bold uppercase",
+                    lv.status === "approved"
+                      ? "bg-status-free-bg text-status-free"
+                      : lv.status === "rejected"
+                      ? "bg-status-danger-bg text-status-danger"
+                      : "bg-status-occupied-bg text-status-occupied"
+                  )}
+                >
+                  {lv.status}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Section 1: My Assigned Station Floor Tables */}
       <div className="space-y-4">
@@ -626,12 +725,12 @@ export default function StaffDashboardPage() {
         </div>
       </div>
 
-      {/* Modal 3: Edit Profile & PIN Modal */}
-      {showEditProfileModal && (
+      {/* Leave Request Modal */}
+      {showLeaveModal && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in">
           <div className="bg-white rounded-card max-w-sm w-full p-6 space-y-5 border border-divider shadow-elevated relative">
             <button
-              onClick={() => setShowEditProfileModal(false)}
+              onClick={() => setShowLeaveModal(false)}
               className="absolute top-4 right-4 text-brand-secondary hover:text-brand-primary p-1 rounded-button hover:bg-bg-subtle transition"
             >
               <X className="h-5 w-5" />
@@ -639,77 +738,78 @@ export default function StaffDashboardPage() {
 
             <div className="flex items-center gap-3">
               <div className="h-10 w-10 rounded-xl bg-brand-primary text-white flex items-center justify-center">
-                <Edit2 className="h-5 w-5" />
+                <Palmtree className="h-5 w-5" />
               </div>
               <div>
                 <h3 className="font-header text-base font-bold text-brand-heading">
-                  Edit Profile &amp; Change PIN
+                  Request Leave
                 </h3>
                 <p className="text-xs text-brand-secondary">
-                  {staffName}
+                  Submitted to HR for admin approval
                 </p>
               </div>
             </div>
 
-            {profileMsg && (
-              <div
-                className={cn(
-                  "p-3 rounded-button text-xs font-semibold border flex items-center gap-2",
-                  profileMsg.type === "success"
-                    ? "bg-status-free-bg text-status-free border-status-free/30"
-                    : "bg-status-danger-bg text-status-danger border-status-danger/30"
-                )}
-              >
-                <AlertCircle className="h-4 w-4 shrink-0" />
-                <span>{profileMsg.text}</span>
-              </div>
-            )}
-
-            <form onSubmit={handleUpdateProfile} className="space-y-3.5 text-xs">
+            <form onSubmit={handleSubmitLeave} className="space-y-3.5 text-xs">
               <div>
                 <label className="text-[10px] font-bold uppercase text-brand-secondary">
-                  Current Secret PIN *
+                  Leave Type
                 </label>
-                <input
-                  type="password"
-                  required
-                  placeholder="Enter current PIN (e.g. 123456)"
-                  value={currentPin}
-                  onChange={(e) => setCurrentPin(e.target.value)}
-                  className="w-full mt-1 px-3 py-2 rounded-button bg-bg-subtle border border-divider font-bold text-brand-primary focus:outline-none"
-                />
+                <select
+                  value={leaveType}
+                  onChange={(e) => setLeaveType(e.target.value)}
+                  className="w-full mt-1 px-3 py-2 rounded-button bg-bg-subtle border border-divider font-bold text-brand-primary"
+                >
+                  <option>Annual Leave</option>
+                  <option>Sick Leave</option>
+                  <option>Unpaid Leave</option>
+                  <option>Emergency</option>
+                </select>
               </div>
-
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-[10px] font-bold uppercase text-brand-secondary">
+                    From
+                  </label>
+                  <input
+                    type="date"
+                    required
+                    value={leaveStart}
+                    onChange={(e) => setLeaveStart(e.target.value)}
+                    className="w-full mt-1 px-3 py-2 rounded-button bg-bg-subtle border border-divider font-bold text-brand-primary"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold uppercase text-brand-secondary">
+                    To
+                  </label>
+                  <input
+                    type="date"
+                    required
+                    value={leaveEnd}
+                    onChange={(e) => setLeaveEnd(e.target.value)}
+                    className="w-full mt-1 px-3 py-2 rounded-button bg-bg-subtle border border-divider font-bold text-brand-primary"
+                  />
+                </div>
+              </div>
               <div>
                 <label className="text-[10px] font-bold uppercase text-brand-secondary">
-                  New Secret PIN Code
+                  Reason
                 </label>
-                <input
-                  type="password"
-                  placeholder="New 4 to 6 digit PIN"
-                  value={newPin}
-                  onChange={(e) => setNewPin(e.target.value)}
-                  className="w-full mt-1 px-3 py-2 rounded-button bg-bg-subtle border border-divider font-bold text-brand-primary focus:outline-none"
+                <textarea
+                  value={leaveReason}
+                  onChange={(e) => setLeaveReason(e.target.value)}
+                  rows={3}
+                  placeholder="Brief reason for leave"
+                  className="w-full mt-1 px-3 py-2 rounded-button bg-bg-subtle border border-divider text-brand-primary"
                 />
               </div>
-
-              <div>
-                <label className="text-[10px] font-bold uppercase text-brand-secondary">
-                  Phone Number
-                </label>
-                <input
-                  type="text"
-                  value={newPhone}
-                  onChange={(e) => setNewPhone(e.target.value)}
-                  className="w-full mt-1 px-3 py-2 rounded-button bg-bg-subtle border border-divider font-bold text-brand-primary focus:outline-none"
-                />
-              </div>
-
               <button
                 type="submit"
-                className="w-full py-2.5 rounded-button bg-brand-primary hover:bg-brand-heading text-white font-bold text-xs transition cursor-pointer shadow-md"
+                className="w-full py-2.5 rounded-button bg-brand-primary hover:bg-brand-heading text-white font-bold text-xs transition cursor-pointer shadow-md inline-flex items-center justify-center gap-2"
               >
-                Save Changes &amp; Update PIN
+                <Send className="h-3.5 w-3.5" />
+                Submit Leave Request
               </button>
             </form>
           </div>
@@ -850,7 +950,10 @@ export default function StaffDashboardPage() {
             <PaymentMethodCard
               totalAmount={settleTable.billTotal || 0}
               tableCode={settleTable.code}
-              onPaymentConfirmed={(method, payAccount) => handleWaiterSettle(method, payAccount)}
+              staffMode
+              onPaymentConfirmed={(method, payAccount, tip) =>
+                handleWaiterSettle(method, payAccount, tip)
+              }
               isProcessing={isSettling}
             />
           </div>

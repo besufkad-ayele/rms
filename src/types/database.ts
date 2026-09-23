@@ -10,11 +10,36 @@ export type PaymentMethod = "cbe_transfer" | "telegram" | "cash";
 export type PaymentStatus = "pending" | "confirmed" | "rejected";
 export type ExpenseCategory = "rent" | "utilities" | "salaries" | "supplies" | "maintenance" | "misc";
 
+export type ModuleAccessFlags = {
+  live?: boolean;
+  hr?: boolean;
+  delivery?: boolean;
+  operations?: boolean;
+  sales?: boolean;
+  products?: boolean;
+  marketing?: boolean;
+};
+
 export interface StaffPermissions {
   can_manage_inventory: boolean;
   can_view_finance: boolean;
   can_manage_shifts: boolean;
   can_manage_staff: boolean;
+  /** Module-level access granted by admin (overrides legacy flags when present). */
+  modules?: ModuleAccessFlags;
+}
+
+export interface ActivityLog {
+  id: string;
+  restaurant_id: string;
+  actor_staff_id?: string | null;
+  actor_name?: string | null;
+  module_id: string;
+  action: string;
+  entity_type?: string | null;
+  entity_id?: string | null;
+  details?: Record<string, unknown>;
+  created_at: string;
 }
 
 export interface Restaurant {
